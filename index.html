@@ -3,6 +3,8 @@
 <head>
   <meta charset="UTF-8">
    <title>ArmaHeaven X195 — Earth + Orbits</title>
+   <!-- Retro terminal font -->
+   <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
   <style>
      body, html {
         margin: 0;
@@ -47,6 +49,85 @@
         background: #fff;
         color: #000;
      }
+     /* Terminal style text: monospaced, glowing green, blinking caret */
+     .terminal {
+        font-family: 'VT323', SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        color: #00ff6a;
+        text-shadow: 0 0 6px rgba(0,255,106,0.8), 0 0 18px rgba(0,255,106,0.5);
+     }
+     .terminal h1, .terminal p { color: inherit; text-shadow: inherit; }
+     .caret {
+        display: inline-block;
+        margin-left: 6px;
+        width: 0.6ch;
+        color: #00ff6a;
+        text-shadow: 0 0 10px rgba(0,255,106,0.9), 0 0 24px rgba(0,255,106,0.6);
+        animation: blink 1s steps(1, end) infinite;
+     }
+     @keyframes blink {
+        0%, 49% { opacity: 1; }
+        50%, 100% { opacity: 0; }
+     }
+     /* Make the links fit the green terminal theme */
+     .links a {
+        border-color: #00ff6a;
+        color: #00ff6a;
+        text-shadow: 0 0 6px rgba(0,255,106,0.8);
+     }
+     .links a:hover {
+        background: #00ff6a;
+        color: #000;
+        box-shadow: 0 0 12px rgba(0,255,106,0.8), 0 0 30px rgba(0,255,106,0.5);
+     }
+   /* Make white backgrounds in the logo disappear over the scene */
+   .logo {
+      mix-blend-mode: multiply; /* removes white backgrounds; try 'darken' if needed */
+   }
+   /* Fixed logo in upper-left corner */
+   .logo-fixed {
+      position: fixed;
+      top: 12px;
+      left: 12px;
+      width: 84px;
+      height: auto;
+      z-index: 20;
+      pointer-events: none;
+   }
+   /* Bottom-right icon links */
+   .corner-links {
+      position: fixed;
+      right: 12px;
+      bottom: 12px;
+      z-index: 12;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+   }
+   .corner-links a {
+      display: inline-flex;
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.06);
+      backdrop-filter: blur(2px);
+      justify-content: center;
+      align-items: center;
+      border: 1px solid rgba(255,255,255,0.12);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+   }
+   .corner-links a:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+   .corner-links svg { width: 22px; height: 22px; }
+   .corner-links .spotify { fill: #1ED760; }
+   .corner-links .patreon { fill: #FF424D; }
+
+   /* Darkening overlay under text */
+   .shade {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.45);
+      z-index: 5; /* below overlay (10), above canvas */
+      pointer-events: none;
+   }
        .hud {
             position: absolute;
             left: 12px;
@@ -59,49 +140,84 @@
 </head>
 <body>
 <div id="container"></div>
+<div class="shade"></div>
+<!-- Fixed logo in top-left -->
+<img class="logo logo-fixed" src="./apoc-sip-symbol.png" alt="Apoc Logo">
 <div class="overlay">
-    <img src="./sip-symbol.png" alt="Apoc Logo" width="120" height="120">
-    <h1>ArmaHeaven X195</h1>
-    <p>Earth with diffuse texture and emissive controlled by specular map • Cubes orbit as placeholder ships</p>
-   <div class="links">
-      <a href="https://www.patreon.com/smashheads?utm_source=chatgpt.com" target="_blank">Support us on Patreon</a>
-      <a href="https://open.spotify.com/artist/2vhrwzjf9H3icunkVFi9tq?" target="_blank">Listen on Spotify</a>
-   </div>
+    <div class="terminal">
+      <h1>ArmaHeaven X195</h1>
+   <p>Are you prepared for what's coming? Can you see into the future?<span class="caret">▌</span></p>
+    </div>
+</div>
+<!-- Bottom-right icon links -->
+<div class="corner-links">
+  <a href="https://open.spotify.com/artist/2vhrwzjf9H3icunkVFi9tq?" target="_blank" aria-label="Spotify">
+    <svg class="spotify" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" role="img">
+      <path d="M12 0C5.372 0 0 5.373 0 12c0 6.628 5.372 12 12 12s12-5.372 12-12C24 5.373 18.628 0 12 0zm5.484 17.28a.752.752 0 0 1-1.036.246c-2.839-1.736-6.42-2.13-10.62-1.172a.75.75 0 1 1-.33-1.462c4.56-1.032 8.5-.583 11.61 1.29.357.218.47.684.246 1.098zm1.375-3.08a.94.94 0 0 1-1.298.307c-3.25-1.99-8.206-2.57-12.056-1.418a.94.94 0 1 1-.536-1.806c4.32-1.28 9.77-.64 13.4 1.55a.94.94 0 0 1 .49 1.366zm.13-3.235a1.126 1.126 0 0 1-1.556.368c-3.72-2.27-9.39-2.48-12.753-1.382a1.125 1.125 0 0 1-.67-2.152c3.89-1.213 10.21-1.003 14.48 1.586.52.317.69 1 .5 1.58z"/>
+    </svg>
+  </a>
+  <a href="https://www.patreon.com/smashheads?utm_source=chatgpt.com" target="_blank" aria-label="Patreon">
+    <svg class="patreon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" role="img">
+      <path d="M1.5 2h3v20h-3V2zm13 0A8.5 8.5 0 0 1 23 10.5c0 4.694-3.806 8.5-8.5 8.5H12V2h2.5z"/>
+    </svg>
+  </a>
 </div>
 <div class="hud">Drag to orbit • Scroll to zoom</div>
 <!-- Three.js library -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<!-- OrbitControls for camera interaction (matching r128) -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/examples/js/controls/OrbitControls.min.js"></script>
+<!-- GLTFLoader for ship model -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<!-- Postprocessing for glow/bloom (r128-compatible) -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
 <script>
-let scene, camera, renderer, stars, controls;
+let scene, camera, renderer, stars;
 let earth, ships = [], clock;
+let composer, bloomPass, beam, redLight;
+let shipGLTF = null;
+let trailTexture = null;
+const Y_AXIS = new THREE.Vector3(0, 1, 0);
+const YAW_LEFT_90 = new THREE.Quaternion().setFromAxisAngle(Y_AXIS, -Math.PI / 2);
+
+// Model URL (place your file at this path or change the URL to match your asset)
+const SHIP_MODEL_URL = './3d/sci_fi_cyberpunk_flying_ship.glb';
 
 function init() {
    scene = new THREE.Scene();
 
    // Camera
-   camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
+      camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 10000);
    camera.position.set(0, 50, 120);
 
    // Renderer
    renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
-   renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      // Better color management for textures
+      renderer.outputEncoding = THREE.sRGBEncoding;
    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
    document.getElementById('container').appendChild(renderer.domElement);
 
-   // Controls
-   controls = new THREE.OrbitControls(camera, renderer.domElement);
-   controls.enableDamping = true;
-   controls.dampingFactor = 0.05;
-   controls.minDistance = 40;
-   controls.maxDistance = 300;
+   // No orbit controls per request (camera is static)
 
-   // Lights: ambient + directional (sun)
-   scene.add(new THREE.AmbientLight(0x404040, 0.6));
-   const sun = new THREE.DirectionalLight(0xffffff, 1.1);
-   sun.position.set(120, 40, 60);
-   scene.add(sun);
+      // Lights: ambient + sun + rim + hemisphere for "epic" contrast
+      scene.add(new THREE.AmbientLight(0x303030, 0.5));
+      const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+      sun.position.set(120, 60, 80);
+      scene.add(sun);
+
+      const rim = new THREE.DirectionalLight(0xfff0e0, 0.6);
+      rim.position.set(-80, -30, -70);
+      scene.add(rim);
+
+      const hemi = new THREE.HemisphereLight(0x445566, 0x000011, 0.4);
+      scene.add(hemi);
+
+   // Trail texture for ship glow
+   trailTexture = new THREE.TextureLoader().load('https://threejs.org/examples/textures/sprites/circle.png');
 
    // Starfield background
    const starGeometry = new THREE.BufferGeometry();
@@ -120,28 +236,72 @@ function init() {
    stars = new THREE.Points(starGeometry, starMaterial);
    scene.add(stars);
 
-   // Earth: diffuse + specular map used to drive emissive
+      // Earth: diffuse + specular + normal maps (with emissive driven by specular map)
    const texLoader = new THREE.TextureLoader();
-   const diffuseTex = texLoader.load('https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg');
-   const specularTex = texLoader.load('https://threejs.org/examples/textures/planets/earth_specular_2048.jpg');
+   const diffuseTex = texLoader.load('./3d/earth_diffuse.png');
+   const specularTex = texLoader.load('./3d/earth_specular.png');
+   const normalTex = texLoader.load('./3d/earth_normal.png');
+      // sRGB for albedo/diffuse
+      diffuseTex.encoding = THREE.sRGBEncoding;
+   // Slight horizontal scaling so more of the texture fits, with wrap & offset to center
+   diffuseTex.wrapS = THREE.RepeatWrapping;
+   specularTex.wrapS = THREE.RepeatWrapping;
+   normalTex.wrapS = THREE.RepeatWrapping;
+   diffuseTex.repeat.set(1.2, 1);
+   specularTex.repeat.set(1.2, 1);
+   normalTex.repeat.set(1.2, 1);
+   diffuseTex.offset.set(-0.1, 0);
+   specularTex.offset.set(-0.1, 0);
+   normalTex.offset.set(-0.1, 0);
 
-   const earthGeo = new THREE.SphereGeometry(20, 96, 96);
-   const earthMat = new THREE.MeshPhongMaterial({
-      map: diffuseTex,
-      specularMap: specularTex,
-      specular: new THREE.Color(0x222222),
-      shininess: 18,
-      emissive: new THREE.Color(0x1a2a6c), // bluish glow
-      emissiveMap: specularTex,            // specular map controls emissive
-      emissiveIntensity: 0.6
-   });
-   earth = new THREE.Mesh(earthGeo, earthMat);
-   scene.add(earth);
+      const earthGeo = new THREE.SphereGeometry(20, 256, 128);
+      const earthMat = new THREE.MeshPhongMaterial({
+         map: diffuseTex,
+         specularMap: specularTex,
+         specular: new THREE.Color(0x333333),
+         shininess: 35,
+         normalMap: normalTex,
+         normalScale: new THREE.Vector2(0.6, 0.6),
+         emissive: new THREE.Color(0x1a2a6c),
+         emissiveMap: specularTex, // specular map controls emissive glow
+         emissiveIntensity: 0.45
+      });
+      earth = new THREE.Mesh(earthGeo, earthMat);
+      scene.add(earth);
 
-   // Placeholder ships: cubes on randomized orbits
-   createShips(20);
+      // Red beam: a very tall additive cylinder starting at Earth's north pole shooting along +Y
+      const beamHeight = 4000;
+   // Thinner beam (narrow radii). Top/bottom radii kept slightly different for a subtle taper.
+   const beamGeom = new THREE.CylinderGeometry(0.6, 1.2, beamHeight, 48, 1, true);
+      const beamMat = new THREE.MeshBasicMaterial({
+         color: 0xff2030,
+         transparent: true,
+         opacity: 0.45,
+         blending: THREE.AdditiveBlending,
+         depthWrite: false,
+         side: THREE.DoubleSide
+      });
+      beam = new THREE.Mesh(beamGeom, beamMat);
+      // position so the bottom sits at y = earthRadius (north pole)
+      beam.position.set(0, 20 + beamHeight / 2, 0);
+      scene.add(beam);
 
-   // Timing
+      // Red point light near the beam base to add local glow on Earth
+      redLight = new THREE.PointLight(0xff2030, 2.2, 600, 2);
+      redLight.position.set(0, 30, 0);
+      scene.add(redLight);
+
+      // Load ship model then create ships on random orbits
+   loadShipModel().then(() => createShips(12));
+
+      // Postprocessing composer with bloom for glow
+      composer = new THREE.EffectComposer(renderer);
+      const renderPass = new THREE.RenderPass(scene, camera);
+      composer.addPass(renderPass);
+      bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.2, 0.6, 0.12);
+      composer.addPass(bloomPass);
+
+      // Timing
    clock = new THREE.Clock();
 
    // Events
@@ -150,36 +310,87 @@ function init() {
    animate();
 }
 
+async function loadShipModel() {
+   return new Promise((resolve) => {
+      const loader = new THREE.GLTFLoader();
+      loader.load(
+         SHIP_MODEL_URL,
+         (gltf) => {
+            shipGLTF = gltf.scene;
+            // Ensure PBR materials look right
+            shipGLTF.traverse((obj) => {
+               if (obj.isMesh && obj.material) {
+                  if (obj.material.map) obj.material.map.encoding = THREE.sRGBEncoding;
+                  obj.material.needsUpdate = true;
+               }
+            });
+            resolve();
+         },
+         undefined,
+         (err) => {
+            console.warn('Ship model failed to load at', SHIP_MODEL_URL, err);
+            shipGLTF = null; // fallback will use procedural box
+            resolve();
+         }
+      );
+   });
+}
+
 function createShips(count) {
    const rng = () => Math.random();
    for (let i = 0; i < count; i++) {
-      const radius = 35 + rng() * 70; // orbit radius
+      const radius = 35 + rng() * 90; // slightly larger possible orbits
       const speed = (rng() * 0.25 + 0.05) * (rng() < 0.5 ? -1 : 1); // radians/sec
       const phase = rng() * Math.PI * 2;
 
-      // Random orbit plane (normal vector)
-      const nx = rng() * 2 - 1;
-      const ny = rng() * 2 - 1;
-      const nz = rng() * 2 - 1;
-      const normal = new THREE.Vector3(nx, ny, nz).normalize();
-
-      // Quaternion rotating +Z to the desired normal
+      // Random orbit plane
+      const normal = new THREE.Vector3(rng() * 2 - 1, rng() * 2 - 1, rng() * 2 - 1).normalize();
       const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
 
-      // Cube mesh
-      const geom = new THREE.BoxGeometry(1.2, 1.2, 3.2);
-      const mat = new THREE.MeshStandardMaterial({
-         color: new THREE.Color().setHSL(rng(), 0.7, 0.6),
-         emissive: 0x111111,
-         metalness: 0.3,
-         roughness: 0.4
-      });
-      const cube = new THREE.Mesh(geom, mat);
-      cube.castShadow = false;
-      cube.receiveShadow = false;
-      scene.add(cube);
+      let mesh;
+      if (shipGLTF) {
+         mesh = shipGLTF.clone(true);
+         const s = 1.0 + rng() * 0.8; // a bit bigger: 1.0 - 1.8
+         mesh.scale.setScalar(s);
+      } else {
+         // Fallback simple box
+         const geom = new THREE.BoxGeometry(1.2, 1.2, 3.2);
+         const mat = new THREE.MeshStandardMaterial({ color: new THREE.Color().setHSL(rng(), 0.7, 0.6), metalness: 0.3, roughness: 0.4 });
+         mesh = new THREE.Mesh(geom, mat);
+      }
+      scene.add(mesh);
 
-      ships.push({ mesh: cube, radius, speed, phase, q });
+      // Create a glow trail for this ship
+   const trailLen = 36; // smaller, shorter trails
+      const trailPositions = new Float32Array(trailLen * 3);
+      const trailColors = new Float32Array(trailLen * 3);
+      // initialize with zeros and a red->dark gradient
+      for (let j = 0; j < trailLen; j++) {
+        const t = 1 - j / (trailLen - 1); // head bright, tail dark
+        const idx = j * 3;
+        trailPositions[idx] = 0; trailPositions[idx + 1] = 0; trailPositions[idx + 2] = 0;
+        // bright red fading to near black
+        trailColors[idx] = 1.0 * t;
+        trailColors[idx + 1] = 0.1 * t;
+        trailColors[idx + 2] = 0.15 * t;
+      }
+      const trailGeom = new THREE.BufferGeometry();
+      trailGeom.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
+      trailGeom.setAttribute('color', new THREE.BufferAttribute(trailColors, 3));
+         const trailMat = new THREE.PointsMaterial({
+        map: trailTexture,
+            size: 3,
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        vertexColors: true,
+        color: 0xffffff,
+        sizeAttenuation: true
+      });
+      const trail = new THREE.Points(trailGeom, trailMat);
+      scene.add(trail);
+
+      ships.push({ mesh, radius, speed, phase, q, trail: { len: trailLen, geom: trailGeom, positions: trailPositions, colors: trailColors } });
    }
 }
 
@@ -195,6 +406,20 @@ function updateShips(elapsed) {
       const tangent = new THREE.Vector3(-Math.sin(t) * s.radius, Math.cos(t) * s.radius, 0).applyQuaternion(s.q);
       const forward = pos.clone().add(tangent.normalize());
       s.mesh.lookAt(forward);
+      // Apply an extra yaw so the ship faces left 90 degrees relative to its path
+      s.mesh.quaternion.multiply(YAW_LEFT_90);
+
+      // Update trail: shift positions down and write the new head position
+      const tp = s.trail.positions;
+      const len = s.trail.len;
+      // shift: from tail to head
+      for (let i = len - 1; i > 0; i--) {
+        tp[i * 3] = tp[(i - 1) * 3];
+        tp[i * 3 + 1] = tp[(i - 1) * 3 + 1];
+        tp[i * 3 + 2] = tp[(i - 1) * 3 + 2];
+      }
+      tp[0] = pos.x; tp[1] = pos.y; tp[2] = pos.z;
+      s.trail.geom.attributes.position.needsUpdate = true;
    }
 }
 
@@ -212,14 +437,17 @@ function animate() {
    }
    updateShips(elapsed);
 
-   controls.update();
-   renderer.render(scene, camera);
+      composer.render();
 }
 
 function onWindowResize() {
    camera.aspect = window.innerWidth / window.innerHeight;
    camera.updateProjectionMatrix();
    renderer.setSize(window.innerWidth, window.innerHeight);
+      if (composer) {
+         composer.setSize(window.innerWidth, window.innerHeight);
+         if (bloomPass) bloomPass.setSize(window.innerWidth, window.innerHeight);
+      }
 }
 
 init();
