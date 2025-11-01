@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+   <title>ArmaHeaven X195 — Earth + Orbits</title>
+  <style>
+     body, html {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        height: 100%;
+        background: #000;
+        font-family: Arial, sans-serif;
+        color: #fff;
+     }
+     .overlay {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        text-align: center;
+        z-index: 10;
+     }
+     h1 {
+        font-size: 3em;
+        margin: 0 0 20px 0;
+        letter-spacing: 2px;
+     }
+     p {
+        font-size: 1.2em;
+        margin: 0 0 20px 0;
+     }
+     .links {
+        margin-top: 20px;
+     }
+     .links a {
+        display: inline-block;
+        margin: 0 10px;
+        padding: 10px 20px;
+        border: 2px solid #fff;
+        color: #fff;
+        text-decoration: none;
+        border-radius: 5px;
+        transition: all 0.3s ease;
+     }
+     .links a:hover {
+        background: #fff;
+        color: #000;
+     }
+       .hud {
+            position: absolute;
+            left: 12px;
+            bottom: 12px;
+            opacity: 0.7;
+            font-size: 12px;
+            z-index: 10;
+       }
+  </style>
+</head>
+<body>
+<div id="container"></div>
+<div class="overlay">
+    <img src="./sip-symbol.png" alt="Apoc Logo" width="120" height="120">
+    <h1>ArmaHeaven X195</h1>
+    <p>Earth with diffuse texture and emissive controlled by specular map • Cubes orbit as placeholder ships</p>
+   <div class="links">
+      <a href="https://www.patreon.com/smashheads?utm_source=chatgpt.com" target="_blank">Support us on Patreon</a>
+      <a href="https://open.spotify.com/artist/2vhrwzjf9H3icunkVFi9tq?" target="_blank">Listen on Spotify</a>
+   </div>
+</div>
+<div class="hud">Drag to orbit • Scroll to zoom</div>
+<!-- Three.js library -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<!-- OrbitControls for camera interaction (matching r128) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/examples/js/controls/OrbitControls.min.js"></script>
+<script>
+let scene, camera, renderer, stars, controls;
+let earth, ships = [], clock;
+
+function init() {
+   scene = new THREE.Scene();
+
+   // Camera
+   camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
+   camera.position.set(0, 50, 120);
+
+   // Renderer
+   renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+   renderer.setSize(window.innerWidth, window.innerHeight);
+   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+   document.getElementById('container').appendChild(renderer.domElement);
+
+   // Controls
+   controls = new THREE.OrbitControls(camera, renderer.domElement);
+   controls.enableDamping = true;
+   controls.dampingFactor = 0.05;
+   controls.minDistance = 40;
+   controls.maxDistance = 300;
+
+   // Lights: ambient + directional (sun)
+   scene.add(new THREE.AmbientLight(0x404040, 0.6));
+   const sun = new THREE.DirectionalLight(0xffffff, 1.1);
+   sun.position.set(120, 40, 60);
+   scene.add(sun);
+
+   // Starfield background
+   const starGeometry = new THREE.BufferGeometry();
+   const starCount = 8000;
+   const positions = new Float32Array(starCount * 3);
+   for (let i = 0; i < starCount; i++) {
+      const r = 1500 * (0.5 + Math.random());
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      positions[i * 3 + 0] = r * Math.sin(phi) * Math.cos(theta);
+      positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+      positions[i * 3 + 2] = r * Math.cos(phi);
+   }
+   starGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+   const starMaterial = new THREE.PointsMaterial({ color: 0xffffff, size: 0.8 });
+   stars = new THREE.Points(starGeometry, starMaterial);
+   scene.add(stars);
+
+   // Earth: diffuse + specular map used to drive emissive
+   const texLoader = new THREE.TextureLoader();
+   const diffuseTex = texLoader.load('https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg');
+   const specularTex = texLoader.load('https://threejs.org/examples/textures/planets/earth_specular_2048.jpg');
+
+   const earthGeo = new THREE.SphereGeometry(20, 96, 96);
+   const earthMat = new THREE.MeshPhongMaterial({
+      map: diffuseTex,
+      specularMap: specularTex,
+      specular: new THREE.Color(0x222222),
+      shininess: 18,
+      emissive: new THREE.Color(0x1a2a6c), // bluish glow
+      emissiveMap: specularTex,            // specular map controls emissive
+      emissiveIntensity: 0.6
+   });
+   earth = new THREE.Mesh(earthGeo, earthMat);
+   scene.add(earth);
+
+   // Placeholder ships: cubes on randomized orbits
+   createShips(20);
+
+   // Timing
+   clock = new THREE.Clock();
+
+   // Events
+   window.addEventListener('resize', onWindowResize, false);
+
+   animate();
+}
+
+function createShips(count) {
+   const rng = () => Math.random();
+   for (let i = 0; i < count; i++) {
+      const radius = 35 + rng() * 70; // orbit radius
+      const speed = (rng() * 0.25 + 0.05) * (rng() < 0.5 ? -1 : 1); // radians/sec
+      const phase = rng() * Math.PI * 2;
+
+      // Random orbit plane (normal vector)
+      const nx = rng() * 2 - 1;
+      const ny = rng() * 2 - 1;
+      const nz = rng() * 2 - 1;
+      const normal = new THREE.Vector3(nx, ny, nz).normalize();
+
+      // Quaternion rotating +Z to the desired normal
+      const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
+
+      // Cube mesh
+      const geom = new THREE.BoxGeometry(1.2, 1.2, 3.2);
+      const mat = new THREE.MeshStandardMaterial({
+         color: new THREE.Color().setHSL(rng(), 0.7, 0.6),
+         emissive: 0x111111,
+         metalness: 0.3,
+         roughness: 0.4
+      });
+      const cube = new THREE.Mesh(geom, mat);
+      cube.castShadow = false;
+      cube.receiveShadow = false;
+      scene.add(cube);
+
+      ships.push({ mesh: cube, radius, speed, phase, q });
+   }
+}
+
+function updateShips(elapsed) {
+   for (const s of ships) {
+      const t = s.speed * elapsed + s.phase;
+      const base = new THREE.Vector3(Math.cos(t) * s.radius, Math.sin(t) * s.radius, 0);
+      base.applyQuaternion(s.q);
+      const pos = base.add(earth.position);
+      s.mesh.position.copy(pos);
+
+      // Orient roughly along tangent
+      const tangent = new THREE.Vector3(-Math.sin(t) * s.radius, Math.cos(t) * s.radius, 0).applyQuaternion(s.q);
+      const forward = pos.clone().add(tangent.normalize());
+      s.mesh.lookAt(forward);
+   }
+}
+
+function animate() {
+   requestAnimationFrame(animate);
+
+   const elapsed = clock.getElapsedTime();
+
+   // Subtle motions
+   if (stars) {
+      stars.rotation.y += 0.0003;
+   }
+   if (earth) {
+      earth.rotation.y += 0.0008; // slow Earth spin
+   }
+   updateShips(elapsed);
+
+   controls.update();
+   renderer.render(scene, camera);
+}
+
+function onWindowResize() {
+   camera.aspect = window.innerWidth / window.innerHeight;
+   camera.updateProjectionMatrix();
+   renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+init();
+</script>
+</body>
+</html>
