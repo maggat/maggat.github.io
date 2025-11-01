@@ -79,19 +79,26 @@
         color: #000;
         box-shadow: 0 0 12px rgba(0,255,106,0.8), 0 0 30px rgba(0,255,106,0.5);
      }
-   /* Make white backgrounds in the logo disappear over the scene */
+   /* Make the logo pop over a dark scene: use screen blend and a soft glow */
    .logo {
-      mix-blend-mode: multiply; /* removes white backgrounds; try 'darken' if needed */
+      mix-blend-mode: screen; /* brightens over dark backgrounds; keeps white transparent areas subtle */
+      filter: drop-shadow(0 0 12px rgba(255,255,255,0.6));
    }
    /* Fixed logo in upper-left corner */
    .logo-fixed {
       position: fixed;
       top: 12px;
       left: 12px;
-      width: 84px;
+      width: 120px;
       height: auto;
-      z-index: 20;
-      pointer-events: none;
+      z-index: 30;
+      pointer-events: auto;
+      cursor: pointer;
+      transition: transform 0.15s ease, filter 0.15s ease;
+   }
+   .logo-fixed:hover {
+      transform: scale(1.04);
+      filter: drop-shadow(0 0 16px rgba(255,255,255,0.85));
    }
    /* Bottom-right icon links */
    .corner-links {
@@ -115,10 +122,16 @@
       border: 1px solid rgba(255,255,255,0.12);
       transition: transform 0.2s ease, box-shadow 0.2s ease;
    }
-   .corner-links a:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+   .corner-links a:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 0 14px rgba(51,179,255,0.85), 0 0 32px rgba(51,179,255,0.55);
+      background: rgba(51,179,255,0.15);
+      border-color: rgba(51,179,255,0.7);
+    }
    .corner-links svg { width: 22px; height: 22px; }
    .corner-links .spotify { fill: #1ED760; }
    .corner-links .patreon { fill: #FF424D; }
+   .corner-links a:hover .spotify, .corner-links a:hover .patreon { fill: #33b3ff; }
 
    /* Darkening overlay under text */
    .shade {
@@ -128,6 +141,91 @@
       z-index: 5; /* below overlay (10), above canvas */
       pointer-events: none;
    }
+    /* Intro modal */
+    .modal-backdrop {
+         position: fixed;
+         inset: 0;
+         background: rgba(0,0,0,0.7);
+         display: flex;
+         align-items: center;
+         justify-content: center;
+         z-index: 40;
+      }
+      .modal-card {
+         background: rgba(10,10,14,0.85);
+         border: 1px solid rgba(51,179,255,0.4);
+         border-radius: 12px;
+         padding: 22px 26px;
+         width: min(92vw, 560px);
+         box-shadow: 0 0 26px rgba(51,179,255,0.5), 0 0 60px rgba(26,120,190,0.35);
+         text-align: center;
+         backdrop-filter: blur(6px);
+      }
+      .modal-card h2 {
+         font-family: 'VT323', monospace;
+         font-size: 40px;
+         margin: 0 0 8px 0;
+         color: #33b3ff;
+         text-shadow: 0 0 10px rgba(51,179,255,0.9);
+      }
+      .modal-card p {
+         font-family: 'VT323', monospace;
+         font-size: 22px;
+         color: #9fd9ff;
+         margin: 0 0 18px 0;
+      }
+      .modal-actions button {
+         font-family: 'VT323', monospace;
+         font-size: 18px;
+         padding: 10px 16px;
+         color: #cfeeff;
+         background: rgba(51,179,255,0.12);
+         border: 1px solid rgba(51,179,255,0.6);
+         border-radius: 8px;
+         cursor: pointer;
+         text-shadow: 0 0 10px rgba(51,179,255,0.8);
+         box-shadow: 0 0 12px rgba(51,179,255,0.5);
+      }
+      .modal-actions button:hover {
+         box-shadow: 0 0 18px rgba(51,179,255,0.9), 0 0 38px rgba(51,179,255,0.6);
+         color: #e9f7ff;
+         background: rgba(51,179,255,0.2);
+      }
+   /* Simple audio player widget */
+   .audio-widget {
+      position: fixed;
+      left: 12px;
+      bottom: 56px; /* sit above the HUD */
+      z-index: 22;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      background: rgba(0,0,0,0.45);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 8px;
+      padding: 8px 10px;
+      backdrop-filter: blur(3px);
+   }
+   .audio-widget button {
+      font-family: 'VT323', monospace;
+      font-size: 16px;
+      padding: 6px 10px;
+      color: #00ff6a;
+      background: rgba(0,0,0,0.4);
+      border: 1px solid rgba(0,255,106,0.5);
+      border-radius: 6px;
+      text-shadow: 0 0 6px rgba(0,255,106,0.8);
+      cursor: pointer;
+   }
+   .audio-widget button:hover { box-shadow: 0 0 14px rgba(51,179,255,0.85), 0 0 32px rgba(51,179,255,0.55); color: #66ccff; border-color: rgba(102,204,255,0.8); }
+   .audio-widget a {
+      color: #1ED760;
+      text-decoration: none;
+      font-family: 'VT323', monospace;
+      font-size: 16px;
+      border-bottom: 1px dashed rgba(30,215,96,0.6);
+   }
+   .audio-widget a:hover { color: #6ff0a3; }
        .hud {
             position: absolute;
             left: 12px;
@@ -136,11 +234,45 @@
             font-size: 12px;
             z-index: 10;
        }
+  /* Hidden YouTube holder for background audio */
+  #yt-holder {
+   position: fixed;
+   width: 1px;
+   height: 1px;
+   left: -10000px;
+   top: auto;
+   opacity: 0;
+   pointer-events: none;
+   z-index: -1;
+  }
   </style>
 </head>
 <body>
 <div id="container"></div>
 <div class="shade"></div>
+<!-- HUD for score/health -->
+<div class="hud"></div>
+<!-- Intro modal -->
+<div id="readyModal" class="modal-backdrop">
+   <div class="modal-card">
+      <h2>Are you ready?</h2>
+      <p>Headphones on. Neony engaged. Let’s go.</p>
+      <div class="modal-actions">
+         <button id="readyBtn">Enter</button>
+      </div>
+   </div>
+  
+</div>
+<!-- Victory modal -->
+<div id="winModal" class="modal-backdrop" style="display:none">
+   <div class="modal-card">
+      <h2>Mission Complete</h2>
+      <p>SMASH INTO PIECES is actively working on a video game to be released in 2026.<br/>More news coming soon.</p>
+      <div class="modal-actions">
+         <button id="winOkBtn">OK</button>
+      </div>
+   </div>
+</div>
 <!-- Fixed logo in top-left -->
 <img class="logo logo-fixed" src="./apoc-sip-symbol.png" alt="Apoc Logo">
 <div class="overlay">
@@ -149,6 +281,7 @@
    <p>Are you prepared for what's coming? Can you see into the future?<span class="caret">▌</span></p>
     </div>
 </div>
+
 <!-- Bottom-right icon links -->
 <div class="corner-links">
   <a href="https://open.spotify.com/artist/2vhrwzjf9H3icunkVFi9tq?" target="_blank" aria-label="Spotify">
@@ -162,7 +295,8 @@
     </svg>
   </a>
 </div>
-<div class="hud">Drag to orbit • Scroll to zoom</div>
+<!-- YouTube IFrame API for background music -->
+<script src="https://www.youtube.com/iframe_api"></script>
 <!-- Three.js library -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <!-- GLTFLoader for ship model -->
@@ -174,14 +308,51 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+<!-- Motion blur requirements -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/AfterimageShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/AfterimagePass.js"></script>
 <script>
 let scene, camera, renderer, stars;
 let earth, ships = [], clock;
-let composer, bloomPass, beam, redLight;
+let composer, bloomPass, afterimagePass, beam, redLight;
 let shipGLTF = null;
 let trailTexture = null;
+let cameraOrbit = null; // { radius, theta, speed, height }
+let playerShip = null; // player's ship spawned in flight mode
+let engineGlows = []; // sprites for engine flames
+let playerTrail = null; // player's trail { len, geom, positions, colors, points }
+// Smooth flight feel state
+let shipSway = 0, shipSwayTarget = 0;           // lateral offset (meters)
+let shipBank = 0, shipBankTarget = 0;           // roll around forward (radians)
+let shipPitchLean = 0, shipPitchLeanTarget = 0; // slight nose tilt with accel (radians)
+let playerVel = new THREE.Vector3();            // player velocity (world units/sec)
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
 const YAW_LEFT_90 = new THREE.Quaternion().setFromAxisAngle(Y_AXIS, -Math.PI / 2);
+const YAW_180 = new THREE.Quaternion().setFromAxisAngle(Y_AXIS, Math.PI);
+
+// Secret flight mode
+let flightMode = false;
+let yaw = 0, pitch = 0;          // smoothed orientation
+let yawTarget = 0, pitchTarget = 0; // target orientation (mouse input)
+const maxPitch = Math.PI / 2 - 0.05;
+const keys = { w:false, a:false, s:false, d:false, q:false, e:false, shift:false };
+let bullets = [];
+let explosions = [];
+let enemyBullets = [];
+let lastTime = 0;
+let fireCooldown = 0;
+let score = 0;
+let bulletGeom, bulletMat;
+let enemyBulletGeom, enemyBulletMat;
+let playerHealth = 100;
+let victoryShown = false;
+let gameTime = 0;
+// SFX buffers
+let sfxCtx = null;
+const sfx = { click: null, laser: null, explosion: null };
+// Engine loop audio
+let engine = { initialized:false, master:null, baseOsc:null, baseGain:null, overtoneOsc:null, overtoneGain:null };
+let engineThrottle = 0, engineThrottleTarget = 0;
 
 // Model URL (place your file at this path or change the URL to match your asset)
 const SHIP_MODEL_URL = './3d/sci_fi_cyberpunk_flying_ship.glb';
@@ -191,7 +362,13 @@ function init() {
 
    // Camera
       camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 10000);
-   camera.position.set(0, 50, 120);
+   camera.position.set(0, 30, 120);
+   // Set up a slow orbit around the Earth (around Y axis) for non-flight mode
+   const rXZ = Math.hypot(camera.position.x, camera.position.z);
+   const theta0 = Math.atan2(camera.position.z, camera.position.x);
+   cameraOrbit = { radius: rXZ, theta: theta0, speed: 0.02, height: camera.position.y };
+   // Slight diagonal tilt (incline orbit plane a bit around X)
+   cameraOrbit.tilt = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0), THREE.MathUtils.degToRad(12));
 
    // Renderer
    renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
@@ -218,6 +395,12 @@ function init() {
 
    // Trail texture for ship glow
    trailTexture = new THREE.TextureLoader().load('https://threejs.org/examples/textures/sprites/circle.png');
+      // Bullet shared resources
+      bulletGeom = new THREE.SphereGeometry(0.3, 8, 8);
+      bulletMat = new THREE.MeshBasicMaterial({ color: 0x33b3ff, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false });
+      // Enemy bullet resources
+      enemyBulletGeom = new THREE.SphereGeometry(0.28, 8, 8);
+      enemyBulletMat = new THREE.MeshBasicMaterial({ color: 0xff5533, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false });
 
    // Starfield background
    const starGeometry = new THREE.BufferGeometry();
@@ -243,16 +426,25 @@ function init() {
    const normalTex = texLoader.load('./3d/earth_normal.png');
       // sRGB for albedo/diffuse
       diffuseTex.encoding = THREE.sRGBEncoding;
-   // Slight horizontal scaling so more of the texture fits, with wrap & offset to center
+   // Ensure equirectangular (2:1) maps 1:1 across sphere
    diffuseTex.wrapS = THREE.RepeatWrapping;
    specularTex.wrapS = THREE.RepeatWrapping;
    normalTex.wrapS = THREE.RepeatWrapping;
-   diffuseTex.repeat.set(1.2, 1);
-   specularTex.repeat.set(1.2, 1);
-   normalTex.repeat.set(1.2, 1);
-   diffuseTex.offset.set(-0.1, 0);
-   specularTex.offset.set(-0.1, 0);
-   normalTex.offset.set(-0.1, 0);
+   diffuseTex.repeat.set(1, 1);
+   specularTex.repeat.set(1, 1);
+   normalTex.repeat.set(1, 1);
+   diffuseTex.offset.set(0, 0);
+   specularTex.offset.set(0, 0);
+   normalTex.offset.set(0, 0);
+   // Improve texture sharpness
+   const maxAniso = renderer.capabilities.getMaxAnisotropy();
+   diffuseTex.anisotropy = maxAniso;
+   specularTex.anisotropy = maxAniso;
+   normalTex.anisotropy = maxAniso;
+   // Optional longitudinal rotation (degrees) if you need to re-center continents
+   const EARTH_LON_OFFSET_DEG = 0; // tweak if alignment is off
+   const lonOffset = THREE.MathUtils.degToRad(EARTH_LON_OFFSET_DEG);
+   [diffuseTex, specularTex, normalTex].forEach(t => { t.center.set(0.5, 0.5); t.rotation = lonOffset; });
 
       const earthGeo = new THREE.SphereGeometry(20, 256, 128);
       const earthMat = new THREE.MeshPhongMaterial({
@@ -268,6 +460,51 @@ function init() {
       });
       earth = new THREE.Mesh(earthGeo, earthMat);
       scene.add(earth);
+
+         // Atmosphere: gradient rim glow via Fresnel-style shader (smooth, "blurred" halo)
+            const atmoGeo = new THREE.SphereGeometry(20.6, 192, 96); // thinner, closer to surface
+         const atmoMat = new THREE.ShaderMaterial({
+             uniforms: {
+                color: { value: new THREE.Color(0x2ab3ff) },
+                   intensity: { value: 0.9 },  // overall glow (slightly reduced)
+                   power: { value: 3.0 }       // steeper falloff => thinner rim
+             },
+             vertexShader: `
+                varying vec3 vWorldPosition;
+                varying vec3 vWorldNormal;
+                void main(){
+                   vec4 wp = modelMatrix * vec4(position, 1.0);
+                   vWorldPosition = wp.xyz;
+                   // Transform normal to world space
+                   vWorldNormal = normalize(mat3(modelMatrix) * normal);
+                   gl_Position = projectionMatrix * viewMatrix * wp;
+                }
+             `,
+             fragmentShader: `
+                uniform vec3 color;
+                uniform float intensity;
+                uniform float power;
+                varying vec3 vWorldPosition;
+                varying vec3 vWorldNormal;
+                void main(){
+                   // View direction in world space
+                   vec3 V = normalize(cameraPosition - vWorldPosition);
+                   // Rim factor (Fresnel). BackSide mesh gives outward normals; use abs for robustness
+                   float rim = 1.0 - max(0.0, dot(normalize(vWorldNormal), V));
+                   rim = pow(rim, power);
+                   // Color and alpha follow the rim for a soft gradient
+                   vec3 glow = color * rim * intensity;
+                   float alpha = rim * 0.85 * (intensity * 0.9);
+                   gl_FragColor = vec4(glow, alpha);
+                }
+             `,
+             transparent: true,
+             blending: THREE.AdditiveBlending,
+             depthWrite: false,
+             side: THREE.BackSide
+         });
+         const atmosphere = new THREE.Mesh(atmoGeo, atmoMat);
+         earth.add(atmosphere);
 
       // Red beam: a very tall additive cylinder starting at Earth's north pole shooting along +Y
       const beamHeight = 4000;
@@ -295,11 +532,14 @@ function init() {
    loadShipModel().then(() => createShips(12));
 
       // Postprocessing composer with bloom for glow
-      composer = new THREE.EffectComposer(renderer);
+   composer = new THREE.EffectComposer(renderer);
       const renderPass = new THREE.RenderPass(scene, camera);
       composer.addPass(renderPass);
       bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.2, 0.6, 0.12);
       composer.addPass(bloomPass);
+   // Subtle accumulation-based motion blur (lower damp = less persistence/blur)
+   afterimagePass = new THREE.AfterimagePass(0.9);
+   composer.addPass(afterimagePass);
 
       // Timing
    clock = new THREE.Clock();
@@ -308,6 +548,11 @@ function init() {
    window.addEventListener('resize', onWindowResize, false);
 
    animate();
+
+   // Secret tap-to-unlock flight mode (tap title 5x)
+   if (typeof setupSecretFlightMode === 'function') setupSecretFlightMode();
+   // Prepare SFX system
+   if (typeof setupSfx === 'function') setupSfx();
 }
 
 async function loadShipModel() {
@@ -339,7 +584,11 @@ async function loadShipModel() {
 function createShips(count) {
    const rng = () => Math.random();
    for (let i = 0; i < count; i++) {
-      const radius = 35 + rng() * 90; // slightly larger possible orbits
+   // Radius with occasional larger orbits so ships can come closer to the camera line
+   const radius = (rng() < 0.35) ? (90 + rng() * 70) : (35 + rng() * 85);
+   // Mild eccentricity so ships sometimes move closer/farther
+   const ecc = rng() * 0.35; // 0..0.35
+   const eccPhase = rng() * Math.PI * 2;
       const speed = (rng() * 0.25 + 0.05) * (rng() < 0.5 ? -1 : 1); // radians/sec
       const phase = rng() * Math.PI * 2;
 
@@ -350,7 +599,7 @@ function createShips(count) {
       let mesh;
       if (shipGLTF) {
          mesh = shipGLTF.clone(true);
-         const s = 1.0 + rng() * 0.8; // a bit bigger: 1.0 - 1.8
+         const s = 1.4 + rng() * 0.9; // bigger: 1.4 - 2.3
          mesh.scale.setScalar(s);
       } else {
          // Fallback simple box
@@ -361,7 +610,7 @@ function createShips(count) {
       scene.add(mesh);
 
       // Create a glow trail for this ship
-   const trailLen = 36; // smaller, shorter trails
+   const trailLen = 96; // longer trail
       const trailPositions = new Float32Array(trailLen * 3);
       const trailColors = new Float32Array(trailLen * 3);
       // initialize with zeros and a red->dark gradient
@@ -377,9 +626,9 @@ function createShips(count) {
       const trailGeom = new THREE.BufferGeometry();
       trailGeom.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
       trailGeom.setAttribute('color', new THREE.BufferAttribute(trailColors, 3));
-         const trailMat = new THREE.PointsMaterial({
+            const trailMat = new THREE.PointsMaterial({
         map: trailTexture,
-            size: 3,
+               size: 1.8, // thinner points
         transparent: true,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
@@ -390,14 +639,16 @@ function createShips(count) {
       const trail = new THREE.Points(trailGeom, trailMat);
       scene.add(trail);
 
-      ships.push({ mesh, radius, speed, phase, q, trail: { len: trailLen, geom: trailGeom, positions: trailPositions, colors: trailColors } });
+      ships.push({ mesh, radius, ecc, eccPhase, speed, phase, q, trail: { len: trailLen, geom: trailGeom, positions: trailPositions, colors: trailColors } });
    }
 }
 
 function updateShips(elapsed) {
    for (const s of ships) {
       const t = s.speed * elapsed + s.phase;
-      const base = new THREE.Vector3(Math.cos(t) * s.radius, Math.sin(t) * s.radius, 0);
+   // Apply eccentricity to vary distance over time
+   const rNow = s.radius * (1 - 0.4 * s.ecc * Math.cos(t * 0.7 + s.eccPhase));
+   const base = new THREE.Vector3(Math.cos(t) * rNow, Math.sin(t) * rNow, 0);
       base.applyQuaternion(s.q);
       const pos = base.add(earth.position);
       s.mesh.position.copy(pos);
@@ -406,8 +657,10 @@ function updateShips(elapsed) {
       const tangent = new THREE.Vector3(-Math.sin(t) * s.radius, Math.cos(t) * s.radius, 0).applyQuaternion(s.q);
       const forward = pos.clone().add(tangent.normalize());
       s.mesh.lookAt(forward);
-      // Apply an extra yaw so the ship faces left 90 degrees relative to its path
-      s.mesh.quaternion.multiply(YAW_LEFT_90);
+   // Apply an extra yaw so the ship faces left 90 degrees relative to its path
+   s.mesh.quaternion.multiply(YAW_LEFT_90);
+   // Flip 180° so models that are backward now face forward
+   s.mesh.quaternion.multiply(YAW_180);
 
       // Update trail: shift positions down and write the new head position
       const tp = s.trail.positions;
@@ -426,7 +679,11 @@ function updateShips(elapsed) {
 function animate() {
    requestAnimationFrame(animate);
 
-   const elapsed = clock.getElapsedTime();
+   const now = clock.getElapsedTime();
+   gameTime = now;
+   const elapsed = now;
+   const dt = Math.max(0.001, Math.min(0.05, now - (lastTime || now)));
+   lastTime = now;
 
    // Subtle motions
    if (stars) {
@@ -437,9 +694,29 @@ function animate() {
    }
    updateShips(elapsed);
 
+      if (flightMode) {
+         updateFlight(dt);
+         updateBullets(dt);
+         updateExplosions(dt);
+         updateEnemiesFire(dt);
+         updateEnemyBullets(dt);
+         checkVictory();
+      } else if (cameraOrbit && earth) {
+         // Slow diagonal camera orbit around Earth when not in flight mode
+         cameraOrbit.theta += cameraOrbit.speed * dt;
+         const base = new THREE.Vector3(
+           Math.cos(cameraOrbit.theta) * cameraOrbit.radius,
+           0,
+           Math.sin(cameraOrbit.theta) * cameraOrbit.radius
+         );
+         base.applyQuaternion(cameraOrbit.tilt);
+         base.y += cameraOrbit.height; // keep average height while tilted
+         camera.position.copy(base);
+         camera.lookAt(earth.position);
+      }
+
       composer.render();
 }
-
 function onWindowResize() {
    camera.aspect = window.innerWidth / window.innerHeight;
    camera.updateProjectionMatrix();
@@ -452,5 +729,639 @@ function onWindowResize() {
 
 init();
 </script>
+<script>
+// Background YouTube audio (hidden player)
+let ytPlayer = null;
+let ytReady = false;
+let ytPlayWhenReady = false;
+
+function createYouTubePlayer(){
+   if (ytPlayer || !(window.YT && YT.Player)) return;
+   ytPlayer = new YT.Player('yt-holder', {
+      height: '1',
+      width: '1',
+      videoId: 'gWkT7Mb3zAE', // NeoFuture
+      playerVars: {
+         autoplay: 0,
+         controls: 0,
+         rel: 0,
+         modestbranding: 1,
+         playsinline: 1,
+         origin: location.origin
+      },
+      events: {
+         onReady: (e) => {
+            ytReady = true;
+            if (ytPlayWhenReady) {
+               try { e.target.setVolume(100); e.target.playVideo(); } catch(_){}
+               ytPlayWhenReady = false;
+            }
+         }
+      }
+   });
+}
+
+window.onYouTubeIframeAPIReady = function(){
+   // Ensure a player exists as soon as API is ready
+   createYouTubePlayer();
+};
+
+function startBackgroundYouTube(){
+   // Ensure player exists
+   if (!ytPlayer) createYouTubePlayer();
+   if (ytPlayer && ytReady) {
+      try { ytPlayer.setVolume(100); ytPlayer.playVideo(); } catch(_){/* ignore */}
+   } else {
+      ytPlayWhenReady = true;
+   }
+}
+
+// Local audio playback for NeoFuture (requires you to place ./audio/neofuture.mp3)
+(function(){
+   const btn = document.getElementById('playNeo');
+   if (!btn) return;
+   const audio = new Audio('./audio/neofuture.mp3');
+   audio.preload = 'none';
+   let playing = false;
+   btn.addEventListener('click', async () => {
+      try {
+         if (!playing) {
+            await audio.play();
+            playing = true;
+            btn.textContent = 'Pause NeoFuture';
+         } else {
+            audio.pause();
+            playing = false;
+            btn.textContent = 'Play NeoFuture';
+         }
+      } catch (e) {
+         // Likely file missing or autoplay blocked; guide user to Spotify
+         btn.textContent = 'Use Spotify (no local file)';
+      }
+   });
+   audio.addEventListener('ended', ()=>{
+      playing = false;
+      btn.textContent = 'Play NeoFuture';
+   });
+})();
+
+// Hover SFX: lightweight synth "sci-fi" beep on button/icon hover
+(function(){
+   let ctx = null;
+   let unlocked = false;
+   function ensureCtx(){
+      if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+      if (ctx.state === 'suspended') ctx.resume();
+   }
+   function unlock(){
+      ensureCtx();
+      unlocked = true;
+      window.removeEventListener('pointerdown', unlock);
+   }
+   window.addEventListener('pointerdown', unlock, { once: true });
+
+   function playHoverBeep(){
+      ensureCtx();
+      if (!ctx || ctx.state !== 'running') return;
+      const t0 = ctx.currentTime;
+      const dur = 0.08; // 80ms
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(1400, t0);
+      osc.frequency.exponentialRampToValueAtTime(1520, t0 + dur);
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.exponentialRampToValueAtTime(0.12, t0 + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t0);
+      osc.stop(t0 + dur + 0.005);
+   }
+
+   function bindHover(selector){
+      document.querySelectorAll(selector).forEach(el => {
+         el.addEventListener('mouseenter', playHoverBeep);
+         el.addEventListener('focus', playHoverBeep);
+      });
+   }
+   bindHover('.corner-links a, .audio-widget button, .logo-fixed');
+})();
+
+   // SFX loader and helpers
+   function setupSfx(){
+      if (window.__sfxInitialized) return; // idempotent
+      window.__sfxInitialized = true;
+      function ensureCtx(){ if (!sfxCtx) sfxCtx = new (window.AudioContext||window.webkitAudioContext)(); return sfxCtx; }
+      async function loadBuffer(url){
+         try {
+            const ctx = ensureCtx();
+            const resp = await fetch(url);
+            const arr = await resp.arrayBuffer();
+            return await ctx.decodeAudioData(arr);
+         } catch (e){ return null; }
+      }
+      // Unlock on first user interaction
+      const unlock = ()=>{ ensureCtx(); if (sfxCtx.state==='suspended') sfxCtx.resume(); window.removeEventListener('pointerdown', unlock); window.removeEventListener('keydown', unlock); window.removeEventListener('mousedown', unlock); };
+      window.addEventListener('pointerdown', unlock, { once: true });
+      window.addEventListener('keydown', unlock, { once: true });
+      window.addEventListener('mousedown', unlock, { once: true });
+      // Kick off buffer loads (local files expected to exist)
+      loadBuffer('./audio/scificlick.wav').then(buf=>{ sfx.click = buf; });
+      loadBuffer('./audio/laser-shot.wav').then(buf=>{ sfx.laser = buf; });
+      loadBuffer('./audio/explosion.wav').then(buf=>{ sfx.explosion = buf; });
+   }
+
+   function playSfx(name, gain=0.9){
+      if (!sfxCtx || sfxCtx.state!=='running') return;
+      const buf = sfx[name];
+      if (!buf) return; // not loaded yet
+      const src = sfxCtx.createBufferSource();
+      src.buffer = buf;
+      // Randomize pitch slightly so repeated SFX don't sound identical
+      src.playbackRate.value = 0.96 + Math.random() * 0.1; // ~ ±5%
+      const g = sfxCtx.createGain();
+      g.gain.value = gain;
+      src.connect(g).connect(sfxCtx.destination);
+      src.start();
+   }
+
+   // Intro modal logic: open Spotify and play click SFX
+   (function(){
+      const modal = document.getElementById('readyModal');
+      const btn = document.getElementById('readyBtn');
+      if (!modal || !btn) return;
+      btn.addEventListener('click', ()=>{
+         playSfx('click', 0.8);
+         modal.style.display = 'none';
+         // Start hidden YouTube playback (user gesture compliant)
+         startBackgroundYouTube();
+      });
+   })();
+
+// ===== Secret Flight Mode implementation =====
+function setupSecretFlightMode(){
+   if (window.__flightBound) return; // idempotent
+   window.__flightBound = true;
+   const title = document.querySelector('.terminal h1');
+   if (!title) return;
+   let taps = 0;
+   let tapTimer = null;
+   title.addEventListener('click', () => {
+      taps++;
+      if (taps >= 5) {
+         taps = 0;
+         enterFlightMode();
+      }
+      clearTimeout(tapTimer);
+      tapTimer = setTimeout(() => { taps = 0; }, 1500);
+   });
+
+   // Also allow one-click activation via the logo
+   const logo = document.querySelector('.logo-fixed');
+   if (logo) {
+      logo.addEventListener('click', () => enterFlightMode());
+   }
+}
+
+function enterFlightMode(){
+   if (flightMode) return;
+   flightMode = true;
+   score = 0;
+   // Update HUD
+   const hud = document.querySelector('.hud');
+   if (hud) hud.textContent = `FLIGHT MODE — WASD move • Mouse aim • Click to fire • Shift boost • ESC — Score: 0 | Health: ${playerHealth}`;
+
+   // Try pointer lock on canvas to capture mouse for aim
+   const canvas = renderer.domElement;
+   function lock(){ canvas.requestPointerLock?.(); }
+   canvas.addEventListener('click', lock, { once: true });
+
+   // Spawn player's ship (simple cube) that follows camera orientation
+   if (!playerShip) {
+      const pGeom = new THREE.BoxGeometry(2.0, 0.8, 4.0);
+      const pMat = new THREE.MeshStandardMaterial({ color: 0x3bb3ff, emissive: 0x0b3a66, emissiveIntensity: 0.8, metalness: 0.1, roughness: 0.6 });
+      playerShip = new THREE.Mesh(pGeom, pMat);
+      scene.add(playerShip);
+      // Initialize position a bit in front of the camera
+      const fwd0 = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
+      playerShip.position.copy(camera.position).add(fwd0.multiplyScalar(10));
+      playerShip.quaternion.copy(camera.quaternion);
+
+      // Create engine glow sprites (left/right) as children of the ship
+      const glowMat = new THREE.SpriteMaterial({ map: trailTexture, color: 0x33b3ff, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending });
+      const glowL = new THREE.Sprite(glowMat.clone());
+      const glowR = new THREE.Sprite(glowMat.clone());
+      // Position behind the ship in local space
+      glowL.position.set(-0.6, -0.1, -2.3);
+      glowR.position.set( 0.6, -0.1, -2.3);
+      glowL.scale.set(1.4, 1.4, 1.4);
+      glowR.scale.set(1.4, 1.4, 1.4);
+      playerShip.add(glowL);
+      playerShip.add(glowR);
+      engineGlows = [glowL, glowR];
+
+      // Create a trailing particle line for the player's ship
+      const trailLen = 70;
+      const trailPositions = new Float32Array(trailLen * 3);
+      const trailColors = new Float32Array(trailLen * 3);
+      for (let j = 0; j < trailLen; j++) {
+        const t = 1 - j / (trailLen - 1);
+        const idx = j * 3;
+        trailPositions[idx] = 0; trailPositions[idx+1] = 0; trailPositions[idx+2] = 0;
+        // cyan-blue fade
+        trailColors[idx] = 0.2 * t;      // R
+        trailColors[idx+1] = 0.7 * t;    // G
+        trailColors[idx+2] = 1.0 * t;    // B
+      }
+      const pTrailGeom = new THREE.BufferGeometry();
+      pTrailGeom.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
+      pTrailGeom.setAttribute('color', new THREE.BufferAttribute(trailColors, 3));
+      const pTrailMat = new THREE.PointsMaterial({ map: trailTexture, size: 1.6, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, vertexColors: true, color: 0xffffff, sizeAttenuation: true });
+      const pTrailPoints = new THREE.Points(pTrailGeom, pTrailMat);
+      scene.add(pTrailPoints);
+      playerTrail = { len: trailLen, geom: pTrailGeom, positions: trailPositions, colors: trailColors, points: pTrailPoints };
+   }
+
+   // Hide overlay text when entering flight mode
+   const overlay = document.querySelector('.overlay');
+   if (overlay) overlay.style.display = 'none';
+
+   // Arm enemy ships: give them simple AI fire timers
+   for (const s of ships) {
+      s.ai = s.ai || {};
+      s.ai.cooldown = 0.7 + Math.random() * 1.4; // seconds between shots
+      s.ai.timer = Math.random() * s.ai.cooldown; // desync starts
+   }
+
+   // Key listeners
+   window.addEventListener('keydown', (e) => {
+      if (e.code === 'KeyW') keys.w = true;
+      if (e.code === 'KeyA') keys.a = true;
+      if (e.code === 'KeyS') keys.s = true;
+      if (e.code === 'KeyD') keys.d = true;
+      if (e.code === 'KeyQ') keys.q = true;
+      if (e.code === 'KeyE') keys.e = true;
+      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') keys.shift = true;
+   });
+   window.addEventListener('keyup', (e) => {
+      if (e.code === 'KeyW') keys.w = false;
+      if (e.code === 'KeyA') keys.a = false;
+      if (e.code === 'KeyS') keys.s = false;
+      if (e.code === 'KeyD') keys.d = false;
+      if (e.code === 'KeyQ') keys.q = false;
+      if (e.code === 'KeyE') keys.e = false;
+      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') keys.shift = false;
+   });
+
+   // Mouse look
+   function onMouseMove(e){
+      if (document.pointerLockElement === renderer.domElement) {
+         const sens = 0.0025;
+         yawTarget   -= e.movementX * sens;
+         pitchTarget -= e.movementY * sens;
+         pitchTarget = Math.max(-maxPitch, Math.min(maxPitch, pitchTarget));
+      }
+   }
+   window.addEventListener('mousemove', onMouseMove);
+
+   // Fire
+   window.addEventListener('mousedown', (e) => {
+      if (e.button === 0) fireBullet();
+   });
+
+   // Open Spotify search for the song in a new tab (within user gesture cascade)
+      // Moved to intro modal acceptance to avoid multiple tabs
+   // Initialize engine audio when flight begins
+   initEngineAudio();
+}
+
+function updateFlight(dt){
+   // Smooth yaw/pitch toward targets for lerpy controls
+   const dampRot = 1 - Math.exp(-dt * 16);
+   yaw   += (yawTarget   - yaw)   * dampRot;
+   pitch += (pitchTarget - pitch) * dampRot;
+   // Build orientation from yaw/pitch
+   const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ'));
+   camera.quaternion.copy(q);
+   // Movement vectors
+   const fwd = new THREE.Vector3(0,0,-1).applyQuaternion(q);
+   const right = new THREE.Vector3(1,0,0).applyQuaternion(q);
+   const up = new THREE.Vector3(0,1,0).applyQuaternion(q);
+   // Gradual acceleration: accelerate velocity toward desired input direction
+   const targetSpeed = keys.shift ? 80 : 40; // units/sec
+   let wish = new THREE.Vector3();
+   if (keys.w) wish.add(fwd);
+   if (keys.s) wish.sub(fwd);
+   if (keys.a) wish.sub(right);
+   if (keys.d) wish.add(right);
+   if (keys.q) wish.sub(up);
+   if (keys.e) wish.add(up);
+   if (wish.lengthSq() > 0) wish.normalize().multiplyScalar(targetSpeed);
+   const acc = keys.shift ? 160 : 90; // units/sec^2 (reduced for smoother accel)
+   const toTarget = wish.clone().sub(playerVel);
+   const maxDelta = acc * dt;
+   if (toTarget.length() > maxDelta) {
+      toTarget.setLength(maxDelta);
+   }
+   playerVel.add(toTarget);
+   // Light drag to prevent infinite drift
+   const drag = 0.06; // per second
+   playerVel.multiplyScalar(Math.max(0, 1 - drag * dt));
+   camera.position.addScaledVector(playerVel, dt);
+
+   // Update engine audio (idle vs thrust)
+   // Throttle based on forward speed component relative to target speed
+   const forwardSpeed = playerVel.dot(fwd);
+   const forwardRatio = THREE.MathUtils.clamp(Math.abs(forwardSpeed) / Math.max(1, targetSpeed), 0, 1);
+   engineThrottleTarget = (keys.w || keys.s) ? forwardRatio : 0.0;
+   updateEngineAudio(dt);
+
+   // Keep player's ship attached to camera orientation/position
+   if (playerShip) {
+      // Smooth target-based sway and bank
+      const lr = (keys.d ? 1 : 0) - (keys.a ? 1 : 0);
+      const fb = (keys.w ? 1 : 0) - (keys.s ? 1 : 0);
+      shipSwayTarget = lr * 1.2; // meters
+      shipBankTarget = lr * THREE.MathUtils.degToRad(18); // roll degrees
+      shipPitchLeanTarget = fb * THREE.MathUtils.degToRad(6); // slight nose tilt
+      const damp = 1 - Math.exp(-dt * 10); // smoothing factor ~ critically damped
+      shipSway += (shipSwayTarget - shipSway) * damp;
+      shipBank += (shipBankTarget - shipBank) * damp;
+      shipPitchLean += (shipPitchLeanTarget - shipPitchLean) * damp;
+
+      // Compose ship orientation: camera orientation + roll (around forward) + slight pitch lean (around right)
+      const qRoll = new THREE.Quaternion().setFromAxisAngle(fwd, shipBank);
+      const qPitchLean = new THREE.Quaternion().setFromAxisAngle(right, -shipPitchLean);
+      const shipQuat = q.clone().multiply(qRoll).multiply(qPitchLean);
+      playerShip.quaternion.copy(shipQuat);
+
+         const shipOffset = 10.0; // meters in front of camera
+         const downOffset = 1.2;  // place ship slightly below camera center
+         playerShip.position.copy(camera.position)
+            .add(fwd.clone().multiplyScalar(shipOffset))
+            .add(right.clone().multiplyScalar(shipSway))
+            .add(up.clone().multiplyScalar(-downOffset));
+
+      // Update engine glows flicker and scale based on thrust
+      const thrust = (keys.w ? 1.0 : 0.35) + (keys.shift ? 0.4 : 0);
+      for (const s of engineGlows) {
+         const flicker = 0.7 + Math.random() * 0.6;
+         const k = 1.0 + thrust * 0.6;
+         s.scale.set(1.2 * k * flicker, 1.2 * k * flicker, 1);
+         s.material.opacity = 0.6 + 0.35 * Math.random();
+      }
+   }
+
+   // Update player's trail
+   if (playerTrail && playerShip) {
+      const tp = playerTrail.positions;
+      const len = playerTrail.len;
+      for (let i = len - 1; i > 0; i--) {
+        tp[i*3] = tp[(i-1)*3];
+        tp[i*3+1] = tp[(i-1)*3+1];
+        tp[i*3+2] = tp[(i-1)*3+2];
+      }
+      // head position a bit behind the ship to visualize exhaust
+      const back = new THREE.Vector3(0,0,1).applyQuaternion(playerShip.quaternion);
+      const head = playerShip.position.clone().add(back.multiplyScalar(3.0));
+      tp[0] = head.x; tp[1] = head.y; tp[2] = head.z;
+      playerTrail.geom.attributes.position.needsUpdate = true;
+   }
+}
+
+function initEngineAudio(){
+   try {
+      if (!sfxCtx) sfxCtx = new (window.AudioContext||window.webkitAudioContext)();
+      if (engine.initialized || !sfxCtx) return;
+      const ctx = sfxCtx;
+      const master = ctx.createGain();
+      master.gain.value = 0.0;
+      master.connect(ctx.destination);
+      // Base hum
+      const baseOsc = ctx.createOscillator();
+      baseOsc.type = 'sawtooth';
+      baseOsc.frequency.value = 80;
+      const baseGain = ctx.createGain();
+      baseGain.gain.value = 0.02;
+      baseOsc.connect(baseGain).connect(master);
+      baseOsc.start();
+      // Overtone / whine
+      const overtoneOsc = ctx.createOscillator();
+      overtoneOsc.type = 'triangle';
+      overtoneOsc.frequency.value = 240;
+      const overtoneGain = ctx.createGain();
+      overtoneGain.gain.value = 0.0;
+      overtoneOsc.connect(overtoneGain).connect(master);
+      overtoneOsc.start();
+      engine = { initialized:true, master, baseOsc, baseGain, overtoneOsc, overtoneGain };
+      // Ensure context is resumed on user gesture
+      const unlock = ()=>{ ctx.resume?.(); window.removeEventListener('pointerdown', unlock); };
+      window.addEventListener('pointerdown', unlock, { once: true });
+   } catch(_){}
+}
+
+function updateEngineAudio(dt){
+   if (!engine.initialized) return;
+   const smooth = 1 - Math.exp(-dt * 8);
+   engineThrottle += (engineThrottleTarget - engineThrottle) * smooth;
+   // Frequencies ramp with throttle
+   const baseF = 80 + engineThrottle * 120;     // 80..200 Hz
+   const overF = 240 + engineThrottle * 360;    // 240..600 Hz
+   // Gains ramp; keep an audible idle
+   const baseG = 0.02 + engineThrottle * 0.10;  // 0.02..0.12
+   const overG = 0.00 + engineThrottle * 0.08;  // 0..0.08
+   const masterG = 0.10 + engineThrottle * 0.12;// 0.10..0.22
+   engine.baseOsc.frequency.setTargetAtTime(baseF, sfxCtx.currentTime, 0.03);
+   engine.overtoneOsc.frequency.setTargetAtTime(overF, sfxCtx.currentTime, 0.03);
+   engine.baseGain.gain.setTargetAtTime(baseG, sfxCtx.currentTime, 0.05);
+   engine.overtoneGain.gain.setTargetAtTime(overG, sfxCtx.currentTime, 0.05);
+   engine.master.gain.setTargetAtTime(masterG, sfxCtx.currentTime, 0.05);
+}
+
+function enemyShootFrom(ship){
+   if (!ship || !ship.mesh) return;
+   // Aim at camera position
+   const origin = ship.mesh.position.clone();
+   const target = camera.position.clone();
+   const dir = target.clone().sub(origin).normalize();
+   const mesh = new THREE.Mesh(enemyBulletGeom, enemyBulletMat.clone());
+   mesh.position.copy(origin.clone().add(dir.clone().multiplyScalar(2.5))); // start a bit away from ship
+   scene.add(mesh);
+   enemyBullets.push({ mesh, vel: dir.multiplyScalar(120), life: 6.0, maxLife: 6.0 });
+}
+
+function updateEnemiesFire(dt){
+   for (const s of ships) {
+      if (!s.ai) continue;
+      s.ai.timer -= dt;
+      if (s.ai.timer <= 0) {
+         enemyShootFrom(s);
+         // next cooldown with slight randomness
+         s.ai.cooldown = Math.max(0.4, (s.ai.cooldown * 0.5 + (0.7 + Math.random() * 1.2) * 0.5));
+         s.ai.timer = s.ai.cooldown;
+      }
+   }
+}
+
+function updateEnemyBullets(dt){
+   const hitR = 2.4; // hit radius around the player (camera)
+   for (let i = enemyBullets.length - 1; i >= 0; i--) {
+      const b = enemyBullets[i];
+      b.mesh.position.addScaledVector(b.vel, dt);
+      b.life -= dt;
+      // Fade slightly over life
+      const t = Math.max(0, b.life / b.maxLife);
+      b.mesh.material.opacity = 0.2 + 0.8 * t;
+      // Hit test vs player
+      const playerPos = camera.position; // treat camera as player center
+      if (b.mesh.position.distanceTo(playerPos) < hitR) {
+         // Damage player
+         playerHealth = Math.max(0, playerHealth - 15);
+         const hud = document.querySelector('.hud');
+         if (hud) hud.textContent = `FLIGHT MODE — WASD move • Mouse aim • Click to fire • Shift boost • ESC — Score: ${score} | Health: ${playerHealth}`;
+         // small explosion for hit
+         spawnExplosion(b.mesh.position.clone());
+         scene.remove(b.mesh);
+         enemyBullets.splice(i, 1);
+         if (playerHealth <= 0) {
+            // Game over: reload the site
+            setTimeout(()=>{ location.reload(); }, 200);
+            return;
+         }
+         continue;
+      }
+      if (b.life <= 0) {
+         scene.remove(b.mesh);
+         enemyBullets.splice(i, 1);
+      }
+   }
+}
+
+function checkVictory(){
+   if (!flightMode || victoryShown) return;
+   if (ships.length === 0) {
+      victoryShown = true;
+      const modal = document.getElementById('winModal');
+      if (modal) {
+         modal.style.display = '';
+         const btn = document.getElementById('winOkBtn');
+         btn && btn.addEventListener('click', ()=>{ modal.style.display = 'none'; });
+      }
+   }
+}
+
+function fireBullet(){
+   if (!flightMode) return;
+   if (fireCooldown > 0) return;
+   fireCooldown = 0.09; // ~11 rps
+   playSfx('laser', 0.7);
+   const dir = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion).normalize();
+   const muzzleOffset = 3.0;
+   const start = (playerShip ? playerShip.position.clone() : camera.position.clone()).add(dir.clone().multiplyScalar(muzzleOffset));
+   const mesh = new THREE.Mesh(bulletGeom, bulletMat.clone());
+   mesh.position.copy(start);
+   scene.add(mesh);
+   bullets.push({ mesh, vel: dir.multiplyScalar(240), life: 2.2, maxLife: 2.2 });
+}
+
+function updateBullets(dt){
+   fireCooldown = Math.max(0, fireCooldown - dt);
+   for (let i = bullets.length - 1; i >= 0; i--) {
+      const b = bullets[i];
+      b.mesh.position.addScaledVector(b.vel, dt);
+      b.life -= dt;
+      const t = Math.max(0, b.life / b.maxLife);
+      b.mesh.material.opacity = 0.2 + 0.8 * t;
+      // Collision with ships
+      for (let j = ships.length - 1; j >= 0; j--) {
+         const s = ships[j];
+         const dist = b.mesh.position.distanceTo(s.mesh.position);
+         const hitR = 3.0; // generous hit radius
+         if (dist < hitR) {
+            // Destroy ship
+            scene.remove(s.mesh);
+            if (s.trail) scene.remove(s.trail.geom ? s.trail.points || s.trail.geom : s.trail);
+            ships.splice(j, 1);
+            spawnExplosion(s.mesh.position.clone());
+            score += 1;
+            const hud = document.querySelector('.hud');
+            if (hud) hud.textContent = `FLIGHT MODE — WASD move • Mouse aim • Click to fire • Shift boost • ESC to release — Score: ${score}`;
+            // Remove bullet on hit
+            scene.remove(b.mesh);
+            bullets.splice(i, 1);
+            break;
+         }
+      }
+      if (b.life <= 0) {
+         scene.remove(b.mesh);
+         bullets.splice(i, 1);
+      }
+   }
+}
+
+function spawnExplosion(pos){
+   const count = 36;
+   const positions = new Float32Array(count * 3);
+   const colors = new Float32Array(count * 3);
+   const velocities = [];
+   for (let i = 0; i < count; i++) {
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      const dir = new THREE.Vector3(
+         Math.sin(phi) * Math.cos(theta),
+         Math.sin(phi) * Math.sin(theta),
+         Math.cos(phi)
+      );
+      positions[i*3] = pos.x;
+      positions[i*3+1] = pos.y;
+      positions[i*3+2] = pos.z;
+      const c = i % 2 === 0 ? new THREE.Color(0xff4422) : new THREE.Color(0xffff88);
+      colors[i*3] = c.r; colors[i*3+1] = c.g; colors[i*3+2] = c.b;
+      velocities.push(dir.multiplyScalar(40 + Math.random()*80));
+   }
+   const geom = new THREE.BufferGeometry();
+   geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+   geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+   const mat = new THREE.PointsMaterial({ map: trailTexture, size: 10, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, vertexColors: true, color: 0xffffff });
+   const points = new THREE.Points(geom, mat);
+   scene.add(points);
+   explosions.push({ points, velocities, life: 0.6, maxLife: 0.6 });
+   // Play explosion SFX if available
+   playSfx('explosion', 0.75);
+}
+
+function updateExplosions(dt){
+   for (let i = explosions.length - 1; i >= 0; i--) {
+      const ex = explosions[i];
+      const posAttr = ex.points.geometry.getAttribute('position');
+      for (let j = 0; j < ex.velocities.length; j++) {
+         posAttr.array[j*3]   += ex.velocities[j].x * dt;
+         posAttr.array[j*3+1] += ex.velocities[j].y * dt;
+         posAttr.array[j*3+2] += ex.velocities[j].z * dt;
+      }
+      posAttr.needsUpdate = true;
+      ex.life -= dt;
+      const t = Math.max(0, ex.life / ex.maxLife);
+      ex.points.material.size = 6 + 18 * (1 - t);
+      ex.points.material.opacity = 0.15 + 0.85 * t;
+      if (ex.life <= 0) {
+         scene.remove(ex.points);
+         explosions.splice(i, 1);
+      }
+   }
+}
+</script>
+<script>
+// Ensure secret flight mode listeners are bound after definitions
+(function(){
+  if (typeof setupSecretFlightMode === 'function') setupSecretFlightMode();
+})();
+// Ensure SFX system is initialized after function definitions load
+(function(){
+   if (typeof setupSfx === 'function') setupSfx();
+})();
+</script>
+<!-- Hidden YouTube player container -->
+<div id="yt-holder" aria-hidden="true"></div>
 </body>
 </html>
