@@ -386,8 +386,8 @@ let mobile = {
    lookId: null, prevLook: { x: 0, y: 0 }
 };
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
-// Player-specific yaw offset (rotate 60° to the left)
-const PLAYER_YAW_LEFT_60 = new THREE.Quaternion().setFromAxisAngle(Y_AXIS, -Math.PI / 15);
+// Player-specific yaw offset (rotate a bit further to the left)
+const PLAYER_YAW_LEFT = new THREE.Quaternion().setFromAxisAngle(Y_AXIS, -THREE.MathUtils.degToRad(0));
 
 // Secret flight mode
 let flightMode = false;
@@ -1134,8 +1134,8 @@ function enterFlightMode(){
    // Position behind the ship in parent local space (forward = -Z, engines at +Z)
    glowL.position.set(-0.6, -0.1, 2.3);
    glowR.position.set( 0.6, -0.1, 2.3);
-      glowL.scale.set(1.4, 1.4, 1.4);
-      glowR.scale.set(1.4, 1.4, 1.4);
+   glowL.scale.set(0.6, 0.6, 0.6);
+   glowR.scale.set(0.6, 0.6, 0.6);
    playerShip.add(glowL);
    playerShip.add(glowR);
       engineGlows = [glowL, glowR];
@@ -1298,7 +1298,7 @@ function updateFlight(dt){
    const qRoll = new THREE.Quaternion().setFromAxisAngle(fwd, shipBank);
    const qPitchLean = new THREE.Quaternion().setFromAxisAngle(right, -shipPitchLean);
    const shipQuat = q.clone().multiply(qRoll).multiply(qPitchLean);
-   playerShip.quaternion.copy(shipQuat).multiply(PLAYER_YAW_LEFT_60);
+   playerShip.quaternion.copy(shipQuat).multiply(PLAYER_YAW_LEFT);
 
          const shipOffset = 10.0; // meters in front of camera
          const downOffset = 1.2;  // place ship slightly below camera center
@@ -1325,7 +1325,7 @@ function updateFlight(dt){
       for (const s of engineGlows) {
          const flicker = 0.7 + Math.random() * 0.6;
          const k = 1.0 + thrust * 0.6;
-         s.scale.set(1.2 * k * flicker, 1.2 * k * flicker, 1);
+         s.scale.set(0.6 * k * flicker, 0.6 * k * flicker, 1);
          s.material.opacity = 0.6 + 0.35 * Math.random();
       }
    }
