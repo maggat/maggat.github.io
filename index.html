@@ -376,7 +376,7 @@
 let scene, camera, renderer, stars;
 let earth, ships = [], clock;
 let cleanupQueue = [];
-let composer, bloomPass, afterimagePass, vignettePass, beam, redLight;
+let composer, bloomPass, afterimagePass, vignettePass, distortionPass, beam, redLight;
 let sunLight = null, sunCore = null, sunGlow = null;
 let shipGLTF = null;
 let trailTexture = null;
@@ -403,6 +403,7 @@ let damageFlashEl = null, damageFlashAlpha = 0;
 let shakeTime = 0, shakeDuration = 0.25, shakeMagnitude = 0;
 // Boost FX state (non-blur): FOV kick + vignette
 let boostFx = 0, boostFxTarget = 0, wasBoosting = false;
+let boostPulse = 0; // short pulse on boost engage for shock/distortion
 // Mobile controls state
 let mobile = {
    active: false,                // true on touch devices
@@ -748,7 +749,10 @@ function init() {
       composer.addPass(afterimagePass);
    // Vignette pass for boost effect (starts disabled with amount 0)
    vignettePass = createVignettePass();
-   composer.addPass(vignettePass);
+         // Subtle boost distortion ("liquify") before vignette
+         distortionPass = createBoostDistortionPass();
+         composer.addPass(distortionPass);
+         composer.addPass(vignettePass);
          // Speed lines overlay for boost sensation
          createSpeedLines();
 
@@ -763,7 +767,12 @@ function init() {
    // Secret tap-to-unlock flight mode (tap title 5x)
    if (typeof setupSecretFlightMode === 'function') setupSecretFlightMode();
    // Prepare SFX system
-   if (typeof setupSfx === 'function') setupSfx();
+   // Initialize SFX only after a user gesture to avoid autoplay warnings
+   if (typeof setupSfx === 'function') {
+      const initSfxOnce = ()=>{ setupSfx(); window.removeEventListener('pointerdown', initSfxOnce); window.removeEventListener('keydown', initSfxOnce); };
+      window.addEventListener('pointerdown', initSfxOnce, { once: true });
+      window.addEventListener('keydown', initSfxOnce, { once: true });
+   }
    // Prepare damage FX overlay
    setupDamageFx();
 }
@@ -830,31 +839,76 @@ function createVignettePass(){
    return pass;
 }
 
-// Speed lines (boost effect): a pool of camera-facing streak sprites spawned ahead of the camera
+// Boost distortion pass: subtle radial warp for a "liquify" feel when boosting
+function createBoostDistortionPass(){
+   const DistortShader = {
+      uniforms: {
+         tDiffuse: { value: null },
+         amount: { value: 0.0 }, // 0..1
+         time: { value: 0.0 }
+      },
+      vertexShader: `
+         varying vec2 vUv;
+         void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }
+      `,
+      fragmentShader: `
+         uniform sampler2D tDiffuse;
+         uniform float amount;
+         uniform float time;
+         varying vec2 vUv;
+         // Simple pseudo-random
+         float n3(vec2 p){ return fract(sin(dot(p, vec2(41.3, 289.1))) * 43758.5453); }
+         void main(){
+            vec2 uv = vUv;
+            vec2 c = vec2(0.5);
+            vec2 d = uv - c;
+            float r = length(d);
+            // Fisheye barrel distortion: expand radially with r^2 and r^4 terms
+            float k = amount * 0.8;        // strength
+            float r2 = r*r;
+            float factor = 1.0 + k * r2 + 0.25 * k * k * r2 * r2;
+            uv = c + d * factor;
+            // Subtle center ripple on engage for impact
+            float ripple = amount * 0.012 * sin(14.0 * r - time * 8.0);
+            vec2 dir = d / max(1e-4, r);
+            uv += dir * ripple;
+            // Tiny noise wobble
+            float wobble = (n3(uv * 120.0 + time) - 0.5) * amount * 0.0025;
+            uv += vec2(wobble, -wobble);
+            uv = clamp(uv, 0.0, 1.0);
+            vec4 col = texture2D(tDiffuse, uv);
+            gl_FragColor = col;
+         }
+      `
+   };
+   const pass = new THREE.ShaderPass(DistortShader);
+   pass.renderToScreen = false;
+   return pass;
+}
+
+// Speed dots (boost effect): a pool of small camera-facing dot sprites spawned near the ship
 function createSpeedLines(){
-   // Generate a vertical streak texture (white core fading to transparent)
-   const size = { w: 16, h: 128 };
+   // Generate a circular dot texture (soft radial falloff)
+   const size = { w: 32 , h: 32 };
    const canvas = document.createElement('canvas');
    canvas.width = size.w; canvas.height = size.h;
    const ctx = canvas.getContext('2d');
-   const grad = ctx.createLinearGradient(0, 0, 0, size.h);
-   grad.addColorStop(0.00, 'rgba(255,255,255,0.0)');
-   grad.addColorStop(0.15, 'rgba(255,255,255,0.3)');
-   grad.addColorStop(0.50, 'rgba(255,255,255,0.9)');
-   grad.addColorStop(0.85, 'rgba(255,255,255,0.3)');
-   grad.addColorStop(1.00, 'rgba(255,255,255,0.0)');
-   ctx.fillStyle = grad;
+   const grd = ctx.createRadialGradient(size.w/2, size.h/2, 0, size.w/2, size.h/2, size.w/2);
+   grd.addColorStop(0.0, 'rgba(255,255,255,1.0)');
+   grd.addColorStop(0.6, 'rgba(255,255,255,0.6)');
+   grd.addColorStop(1.0, 'rgba(255,255,255,0.0)');
+   ctx.fillStyle = grd;
    ctx.fillRect(0, 0, size.w, size.h);
-   const streakTex = new THREE.CanvasTexture(canvas);
-   streakTex.minFilter = THREE.LinearFilter;
-   streakTex.magFilter = THREE.LinearFilter;
-   streakTex.wrapS = THREE.ClampToEdgeWrapping;
-   streakTex.wrapT = THREE.ClampToEdgeWrapping;
-   speedLines.texture = streakTex;
+   const dotTex = new THREE.CanvasTexture(canvas);
+   dotTex.minFilter = THREE.LinearFilter;
+   dotTex.magFilter = THREE.LinearFilter;
+   dotTex.wrapS = THREE.ClampToEdgeWrapping;
+   dotTex.wrapT = THREE.ClampToEdgeWrapping;
+   speedLines.texture = dotTex;
 
    const material = new THREE.SpriteMaterial({
-      map: streakTex,
-      color: 0x99ccff,
+      map: dotTex,
+      color: 0xffffff,
       transparent: true,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
@@ -865,13 +919,11 @@ function createSpeedLines(){
    group.renderOrder = 999; // draw late
    scene.add(group);
    speedLines.group = group;
-   const COUNT = 90;
+   const COUNT = 180;
    for (let i=0;i<COUNT;i++){
       const sp = new THREE.Sprite(material.clone());
-      sp.scale.set(0.06, 3.0, 1);
+      sp.scale.set(0.12, 0.12, 1);
       sp.visible = false;
-      // Rotate 90 degrees so streaks are horizontal on screen
-      sp.material.rotation = Math.PI * 0.5;
       group.add(sp);
       speedLines.sprites.push({ sprite: sp, vel: 0, life: 0, maxLife: 1 });
    }
@@ -880,7 +932,7 @@ function createSpeedLines(){
 function updateSpeedLines(dt){
    if (!speedLines.group) return;
    // Determine activation from boostFx (global)
-   const active = boostFx > 0.05;
+   const active = boostFx > 0.02;
    speedLines.active = active;
    speedLines.group.visible = active;
    if (!active) {
@@ -898,42 +950,46 @@ function updateSpeedLines(dt){
    const right = new THREE.Vector3(1,0,0).applyQuaternion(q);
    const up = new THREE.Vector3(0,1,0).applyQuaternion(q);
 
-   const spread = 16; // half-width/height of spawn box
-   const minZ = 18, maxZ = 110; // distance ahead
-   const baseSpeed = 180, extra = 420; // units/sec along forward
-   const targetOpacity = 0.15 + 0.45 * THREE.MathUtils.clamp(boostFx, 0, 1);
+   const minZ = 12, maxZ = 42; // distance ahead (closer since dots move sideways)
+   const baseSpeed = 140, extra = 360; // units/sec along screen-plane
+   const targetOpacity = 0.28 + 0.55 * THREE.MathUtils.clamp(boostFx, 0, 1);
    for (const s of speedLines.sprites) {
       const sp = s.sprite;
       if (s.life <= 0 || !sp.visible) {
-         // respawn ahead of camera
-         const dx = (Math.random()*2-1) * spread;
-         const dy = (Math.random()*2-1) * spread;
+         // respawn just ahead of camera, near the ship, then travel outward in a circular pattern
          const dz = THREE.MathUtils.lerp(minZ, maxZ, Math.random());
+         const ang = Math.random() * Math.PI * 2;
+         const r0 = 0.3 + Math.random()*1.6; // small initial radius around ship
          const pos = camera.position.clone()
-            .add(right.multiplyScalar(dx))
-            .add(up.multiplyScalar(dy))
-            .add(fwd.clone().multiplyScalar(dz));
+            .add(fwd.clone().multiplyScalar(dz))
+            .add(right.clone().multiplyScalar(Math.cos(ang) * r0))
+            .add(up.clone().multiplyScalar(Math.sin(ang) * r0));
          sp.position.copy(pos);
-         // Randomize length and speed with boost
-         const len = 2.2 + Math.random()*4.5 + boostFx*3.5;
-         sp.scale.set(0.06, len, 1);
+         // Size dots to a roughly constant on-screen size based on depth and FOV
+         const halfH = Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5)) * dz;
+         const screenFrac = 0.014 + 0.010 * (boostFx || 0) + Math.random()*0.004; // larger fraction for clarity
+         const sizeWorld = THREE.MathUtils.clamp(screenFrac * 2 * halfH, 0.12, 2.8);
+         sp.scale.set(sizeWorld, sizeWorld, 1);
+         s.ang = ang; // store screen-plane travel angle
          s.vel = (baseSpeed + extra * boostFx + Math.random()*120);
-         s.maxLife = THREE.MathUtils.mapLinear(dz, minZ, maxZ, 0.25, 0.9);
+         s.maxLife = 0.45 + Math.random()*0.7; // 0.45..1.15s
          s.life = s.maxLife;
          sp.visible = true;
          sp.material.opacity = 0.0;
       } else {
-         // move towards camera along -fwd
-         sp.position.addScaledVector(fwd, -s.vel * dt);
+         // move outward in the camera's screen plane from the ship/camera center
+         const dir2d = right.clone().multiplyScalar(Math.cos(s.ang || 0)).add(up.clone().multiplyScalar(Math.sin(s.ang || 0)));
+         sp.position.addScaledVector(dir2d, s.vel * dt);
          s.life -= dt;
       }
       // fade in/out
       const t = 1 - (s.life / s.maxLife);
-      const o = (t < 0.2) ? (t/0.2) : (t > 0.8 ? (1 - t)/0.2 : 1);
-      sp.material.opacity = THREE.MathUtils.clamp(o * targetOpacity, 0, 1);
+   const o = (t < 0.2) ? (t/0.2) : (t > 0.8 ? (1 - t)/0.2 : 1);
+   sp.material.opacity = THREE.MathUtils.clamp(o * targetOpacity, 0, 1);
       // if behind camera, force recycle
-      const toCam = sp.position.clone().sub(camera.position);
-      if (toCam.dot(fwd) < -5) {
+      const toCam2 = sp.position.clone().sub(camera.position);
+      const screenRad = Math.abs(toCam2.dot(right)) + Math.abs(toCam2.dot(up));
+      if (toCam2.dot(fwd) < -5 || screenRad > 120) {
          s.life = 0; sp.visible = false; sp.material.opacity = 0;
       }
    }
@@ -1144,13 +1200,17 @@ function animate() {
    if (sunGlow) {
       sunGlow.quaternion.copy(camera.quaternion);
    }
+   // Update distortion time uniform
+   if (distortionPass) {
+      distortionPass.uniforms.time.value += dt;
+   }
    updateShips(elapsed);
 
    // Process a few deferred cleanups per frame to avoid GC spikes
    if (cleanupQueue && cleanupQueue.length) {
       const n = Math.min(3, cleanupQueue.length);
       for (let i = 0; i < n; i++) {
-         try { cleanupQueue.shift()?.(); } catch(_){ }
+         try { const fn = cleanupQueue.shift(); if (typeof fn === 'function') fn(); } catch(_){ }
       }
    }
 
@@ -1498,6 +1558,30 @@ function ensureYtLoop(){
       src.start();
    }
 
+   // Quick synthetic low boom for boost engage (no external asset required)
+   window.playBoom = function(intensity=0.8){
+      if (!sfxCtx) return;
+      const ctx = sfxCtx;
+      const now = ctx.currentTime;
+      if (!isFinite(intensity) || intensity <= 0) intensity = 0.8;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const lowpass = ctx.createBiquadFilter();
+      lowpass.type = 'lowpass';
+      lowpass.frequency.setValueAtTime(380, now);
+      osc.type = 'sine';
+      // pitch drop (use linear ramps to avoid non-finite exponential constraints)
+      osc.frequency.setValueAtTime(220, now);
+      osc.frequency.linearRampToValueAtTime(80, now + 0.22);
+      // envelope (setTargetAtTime avoids exponential non-finite constraints)
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.setTargetAtTime(0.35 * intensity, now, 0.012);
+      gain.gain.setTargetAtTime(0.0001, now + 0.06, 0.09);
+      osc.connect(lowpass).connect(gain).connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.32);
+   };
+
    // Intro modal logic: open Spotify and play click SFX
    (function(){
       const modal = document.getElementById('readyModal');
@@ -1548,10 +1632,13 @@ function enterFlightMode(){
    const hb = document.getElementById('healthbar');
    if (hb) { hb.style.display = ''; hb.setAttribute('aria-hidden','false'); }
 
-   // Try pointer lock on canvas to capture mouse for aim
+   // Try pointer lock on canvas to capture mouse for aim; allow re-lock on subsequent clicks
    const canvas = renderer.domElement;
-   function lock(){ canvas.requestPointerLock?.(); }
-   canvas.addEventListener('click', lock, { once: true });
+   function lock(){ if (document.pointerLockElement !== canvas && canvas.requestPointerLock) canvas.requestPointerLock(); }
+   canvas.addEventListener('click', lock);
+   // Also allow clicking anywhere on the page to re-lock while in flight
+   const relock = (e)=>{ if (flightMode && document.pointerLockElement !== canvas && canvas.requestPointerLock) { canvas.requestPointerLock(); } };
+   document.addEventListener('click', relock);
 
    // Spawn player's ship (parent container) and attach visual model as child
    if (!playerShip) {
@@ -1770,6 +1857,10 @@ function updateFlight(dt){
          playSfx('boost', 0.7);
          lastBoostSfxTime = gameTime;
       }
+   // Shock pulse for distortion on engage
+   boostPulse = 1.0;
+   // Optional low "boom" synth for impact
+   if (typeof window.playBoom === 'function') window.playBoom(0.9);
    }
    // Play reversed whoosh on boost release (falling edge)
    if (!isBoosting && wasBoost) {
@@ -1785,6 +1876,14 @@ function updateFlight(dt){
    if (afterimagePass) afterimagePass.enabled = false;
    // Apply boost FX to vignette and camera FOV
    if (vignettePass) vignettePass.uniforms.amount.value = boostFx * 0.5; // very subtle
+   if (distortionPass) {
+      // Base distortion from boost plus a short pulse spike
+      const pulse = boostPulse;
+      // Exponential decay of pulse
+      boostPulse = Math.max(0, boostPulse - dt * 4.0);
+      const amt = THREE.MathUtils.clamp(0.06 * boostFx + 0.10 * pulse, 0, 0.35);
+      distortionPass.uniforms.amount.value = amt;
+   }
    const baseFov = 60, maxKick = 6; // degrees
    const newFov = baseFov + boostFx * maxKick;
    if (Math.abs(camera.fov - newFov) > 0.01) { camera.fov = newFov; camera.updateProjectionMatrix(); }
@@ -1820,14 +1919,20 @@ function updateFlight(dt){
             .add(right.clone().multiplyScalar(shipSway))
             .add(up.clone().multiplyScalar(-downOffset));
 
-      // Update engine glows placement, flicker and scale based on thrust
+      // Update engine glows placement, flicker and scale based on thrust and boost
       const thrust = (keys.w ? 1.0 : 0.35) + (keys.shift ? 0.4 : 0);
+      const boostScale = 1.0 + (boostFx || 0) * 1.0; // up to +100% size at full boost
       // Engine glows have fixed local offsets on the ship; no per-frame repositioning needed
       for (const s of engineGlows) {
-         const flicker = 0.7 + Math.random() * 0.6;
-         const k = 1.0 + thrust * 0.6;
-         s.scale.set(0.35 * k * flicker, 0.35 * k * flicker, 1);
-         s.material.opacity = 0.5 + 0.25 * Math.random();
+         const flicker = 0.8 + Math.random() * 0.5; // keep some life
+         const k = (1.0 + thrust * 0.6) * boostScale;
+         const base = 0.35;
+         const sx = base * k * flicker;
+         const sy = base * k * 1.15 * flicker; // slightly taller for a flame look
+         s.scale.set(sx, sy, 1);
+         // Slightly brighter when boosting
+         const baseOpacity = 0.5 + 0.25 * Math.random();
+         s.material.opacity = Math.min(1.0, baseOpacity + (boostFx || 0) * 0.2);
       }
    }
 
@@ -1878,7 +1983,7 @@ function initEngineAudio(){
       overtoneOsc.start();
       engine = { initialized:true, master, baseOsc, baseGain, overtoneOsc, overtoneGain };
       // Ensure context is resumed on user gesture
-      const unlock = ()=>{ ctx.resume?.(); window.removeEventListener('pointerdown', unlock); };
+   const unlock = ()=>{ if (ctx && typeof ctx.resume === 'function') ctx.resume(); window.removeEventListener('pointerdown', unlock); };
       window.addEventListener('pointerdown', unlock, { once: true });
    } catch(_){}
 }
@@ -2097,10 +2202,7 @@ function updateExplosions(dt){
 (function(){
   if (typeof setupSecretFlightMode === 'function') setupSecretFlightMode();
 })();
-// Ensure SFX system is initialized after function definitions load
-(function(){
-   if (typeof setupSfx === 'function') setupSfx();
-})();
+// SFX system is initialized after the first user gesture (see init()), to satisfy autoplay policies.
 </script>
 <!-- Hidden YouTube player container -->
 <div id="yt-holder" aria-hidden="true"></div>
