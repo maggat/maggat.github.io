@@ -234,6 +234,13 @@
             font-size: 12px;
             z-index: 10;
        }
+     /* Healthbar */
+     .healthbar { position: fixed; top: 12px; left: 12px; width: 220px; height: 18px; border: 1px solid rgba(255,255,255,0.35); background: rgba(0,0,0,0.35); backdrop-filter: blur(4px); z-index: 30; display: none; }
+     .healthbar .fill { height: 100%; width: 100%; background: linear-gradient(90deg, #2ecc71, #27ae60); box-shadow: 0 0 12px rgba(46,204,113,0.7) inset; transition: width 120ms ease-out; }
+     .healthbar.low .fill { background: linear-gradient(90deg, #ff6b6b, #e74c3c); box-shadow: 0 0 12px rgba(255,107,107,0.7) inset; }
+     .healthbar .label { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); color: #fff; font-family: 'VT323', monospace; font-size: 14px; text-shadow: 0 0 6px rgba(0,0,0,0.6); }
+   /* Damage flash overlay */
+   #damageFlash { position: fixed; inset: 0; pointer-events: none; z-index: 40; background: rgba(255,30,20,0); mix-blend-mode: screen; }
   /* Mobile controls overlay */
   .mobile-controls { position: fixed; inset: 0; z-index: 25; pointer-events: none; }
   .mobile-controls .pad {
@@ -293,6 +300,9 @@
 <div class="shade"></div>
 <!-- HUD for score/health -->
 <div class="hud"></div>
+<!-- Healthbar -->
+<div id="healthbar" class="healthbar" aria-hidden="true"><div class="fill"></div><div class="label">100</div></div>
+<div id="damageFlash" aria-hidden="true"></div>
 <!-- Intro modal -->
 <div id="readyModal" class="modal-backdrop">
    <div class="modal-card">
@@ -356,24 +366,43 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
-<!-- Motion blur requirements -->
+<!-- Lens flare for the Sun -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/objects/Lensflare.js"></script>
+<!-- Subtle motion blur (Afterimage) -->
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/AfterimageShader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/AfterimagePass.js"></script>
+<!-- Motion blur removed -->
 <script>
 let scene, camera, renderer, stars;
 let earth, ships = [], clock;
-let composer, bloomPass, afterimagePass, beam, redLight;
+let cleanupQueue = [];
+let composer, bloomPass, afterimagePass, vignettePass, beam, redLight;
+let sunLight = null, sunCore = null, sunGlow = null;
 let shipGLTF = null;
 let trailTexture = null;
 let cameraOrbit = null; // { radius, theta, speed, height }
 let playerShip = null; // player's ship spawned in flight mode
 let engineGlows = []; // sprites for engine flames
 let playerTrail = null; // player's trail { len, geom, positions, colors, points }
+let planets = []; // distant planets with enemies
+// Speed lines effect state
+let speedLines = { group: null, sprites: [], texture: null, active: false };
+const curiosa = {
+   p1: 'Per is great at imitating gunde svan',
+   p2: 'Adam is a big blizzard fan',
+   p3: 'Benjamin is a great musician',
+   p4: 'Apoc plays all instruments known to mankind'
+};
 // Smooth flight feel state
 let shipSway = 0, shipSwayTarget = 0;           // lateral offset (meters)
 let shipBank = 0, shipBankTarget = 0;           // roll around forward (radians)
 let shipPitchLean = 0, shipPitchLeanTarget = 0; // slight nose tilt with accel (radians)
 let playerVel = new THREE.Vector3();            // player velocity (world units/sec)
+// Damage FX state
+let damageFlashEl = null, damageFlashAlpha = 0;
+let shakeTime = 0, shakeDuration = 0.25, shakeMagnitude = 0;
+// Boost FX state (non-blur): FOV kick + vignette
+let boostFx = 0, boostFxTarget = 0, wasBoosting = false;
 // Mobile controls state
 let mobile = {
    active: false,                // true on touch devices
@@ -388,6 +417,8 @@ let mobile = {
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
 // Player-specific yaw offset (rotate a bit further to the left)
 const PLAYER_YAW_LEFT = new THREE.Quaternion().setFromAxisAngle(Y_AXIS, -THREE.MathUtils.degToRad(0));
+// Enemy ships need an additional left yaw to align their noses with motion
+const ENEMY_YAW_LEFT = new THREE.Quaternion().setFromAxisAngle(Y_AXIS, THREE.MathUtils.degToRad(45));
 
 // Secret flight mode
 let flightMode = false;
@@ -408,13 +439,15 @@ let victoryShown = false;
 let gameTime = 0;
 // SFX buffers
 let sfxCtx = null;
-const sfx = { click: null, laser: null, explosion: null };
+const sfx = { click: null, laser: null, explosion: null, boost: null, boostRev: null };
+let lastBoostSfxTime = 0; // seconds, to debounce boost trigger sound
+let lastBoostReleaseSfxTime = 0; // debounce for release whoosh
 // Engine loop audio
 let engine = { initialized:false, master:null, baseOsc:null, baseGain:null, overtoneOsc:null, overtoneGain:null };
 let engineThrottle = 0, engineThrottleTarget = 0;
 
 // Model URL (place your file at this path or change the URL to match your asset)
-const SHIP_MODEL_URL = './3d/sci_fi_cyberpunk_flying_ship.glb';
+const SHIP_MODEL_URL = './3d/ship.glb';
 
 function setupMobileControls(){
    // Detect touch/coarse pointer devices
@@ -553,7 +586,7 @@ function init() {
 
    // No orbit controls per request (camera is static)
 
-      // Lights: ambient + sun + rim + hemisphere for "epic" contrast
+   // Lights: ambient + sun + rim + hemisphere for "epic" contrast
       scene.add(new THREE.AmbientLight(0x303030, 0.5));
       const sun = new THREE.DirectionalLight(0xffffff, 1.6);
       sun.position.set(120, 60, 80);
@@ -566,6 +599,9 @@ function init() {
       const hemi = new THREE.HemisphereLight(0x445566, 0x000011, 0.4);
       scene.add(hemi);
 
+   // Distant Sun with lens flare and point light
+   createSun();
+
    // Trail texture for ship glow
    trailTexture = new THREE.TextureLoader().load('https://threejs.org/examples/textures/sprites/circle.png');
       // Bullet shared resources
@@ -577,10 +613,10 @@ function init() {
 
    // Starfield background
    const starGeometry = new THREE.BufferGeometry();
-   const starCount = 8000;
+      const starCount = 15000; // denser starfield
    const positions = new Float32Array(starCount * 3);
    for (let i = 0; i < starCount; i++) {
-      const r = 1500 * (0.5 + Math.random());
+         const r = 2000 + Math.random() * 7000; // 2,000 .. 9,000 (within camera far 10,000)
       const theta = Math.random() * Math.PI * 2;
       const phi = Math.acos(2 * Math.random() - 1);
       positions[i * 3 + 0] = r * Math.sin(phi) * Math.cos(theta);
@@ -588,36 +624,34 @@ function init() {
       positions[i * 3 + 2] = r * Math.cos(phi);
    }
    starGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-   const starMaterial = new THREE.PointsMaterial({ color: 0xffffff, size: 0.8 });
+      const starMaterial = new THREE.PointsMaterial({ color: 0xffffff, size: 0.7 });
    stars = new THREE.Points(starGeometry, starMaterial);
    scene.add(stars);
 
-      // Earth: diffuse + specular + normal maps (with emissive driven by specular map)
+   // Create distant planets with lurking enemies
+   createDistantPlanets();
+
+      // Earth: higher-res diffuse + specular maps; red emissive glow
    const texLoader = new THREE.TextureLoader();
-   const diffuseTex = texLoader.load('./3d/earth_diffuse.png');
+   const diffuseTex = texLoader.load('https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg');
    const specularTex = texLoader.load('./3d/earth_specular.png');
-   const normalTex = texLoader.load('./3d/earth_normal.png');
       // sRGB for albedo/diffuse
       diffuseTex.encoding = THREE.sRGBEncoding;
    // Ensure equirectangular (2:1) maps 1:1 across sphere
    diffuseTex.wrapS = THREE.RepeatWrapping;
    specularTex.wrapS = THREE.RepeatWrapping;
-   normalTex.wrapS = THREE.RepeatWrapping;
    diffuseTex.repeat.set(1, 1);
    specularTex.repeat.set(1, 1);
-   normalTex.repeat.set(1, 1);
    diffuseTex.offset.set(0, 0);
    specularTex.offset.set(0, 0);
-   normalTex.offset.set(0, 0);
    // Improve texture sharpness
    const maxAniso = renderer.capabilities.getMaxAnisotropy();
    diffuseTex.anisotropy = maxAniso;
    specularTex.anisotropy = maxAniso;
-   normalTex.anisotropy = maxAniso;
    // Optional longitudinal rotation (degrees) if you need to re-center continents
    const EARTH_LON_OFFSET_DEG = 0; // tweak if alignment is off
    const lonOffset = THREE.MathUtils.degToRad(EARTH_LON_OFFSET_DEG);
-   [diffuseTex, specularTex, normalTex].forEach(t => { t.center.set(0.5, 0.5); t.rotation = lonOffset; });
+   [diffuseTex, specularTex].forEach(t => { t.center.set(0.5, 0.5); t.rotation = lonOffset; });
 
       const earthGeo = new THREE.SphereGeometry(20, 256, 128);
       const earthMat = new THREE.MeshPhongMaterial({
@@ -625,22 +659,20 @@ function init() {
          specularMap: specularTex,
          specular: new THREE.Color(0x333333),
          shininess: 35,
-         normalMap: normalTex,
-         normalScale: new THREE.Vector2(0.6, 0.6),
-         emissive: new THREE.Color(0x1a2a6c),
-         emissiveMap: specularTex, // specular map controls emissive glow
-         emissiveIntensity: 0.45
+         emissive: new THREE.Color(0xff2030), // red glow
+         emissiveMap: specularTex, // oceans/city lights drive emissive
+         emissiveIntensity: 0.6
       });
       earth = new THREE.Mesh(earthGeo, earthMat);
       scene.add(earth);
 
          // Atmosphere: gradient rim glow via Fresnel-style shader (smooth, "blurred" halo)
-            const atmoGeo = new THREE.SphereGeometry(20.6, 192, 96); // thinner, closer to surface
+            const atmoGeo = new THREE.SphereGeometry(20.75, 192, 96); // slightly larger, subtle halo
          const atmoMat = new THREE.ShaderMaterial({
              uniforms: {
-                color: { value: new THREE.Color(0x2ab3ff) },
-                   intensity: { value: 0.9 },  // overall glow (slightly reduced)
-                   power: { value: 3.0 }       // steeper falloff => thinner rim
+                color: { value: new THREE.Color(0xff3030) },
+                   intensity: { value: 1.0 },  // stronger red halo
+                   power: { value: 2.6 }       // softer rim
              },
              vertexShader: `
                 varying vec3 vWorldPosition;
@@ -710,9 +742,15 @@ function init() {
       composer.addPass(renderPass);
       bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.2, 0.6, 0.12);
       composer.addPass(bloomPass);
-   // Subtle accumulation-based motion blur (lower damp = less persistence/blur)
-   afterimagePass = new THREE.AfterimagePass(0.9);
-   composer.addPass(afterimagePass);
+      // Extremely subtle boost-only motion blur (disabled by default)
+      afterimagePass = new THREE.AfterimagePass(0.9998);
+      afterimagePass.enabled = false;
+      composer.addPass(afterimagePass);
+   // Vignette pass for boost effect (starts disabled with amount 0)
+   vignettePass = createVignettePass();
+   composer.addPass(vignettePass);
+         // Speed lines overlay for boost sensation
+         createSpeedLines();
 
       // Timing
    clock = new THREE.Clock();
@@ -726,6 +764,8 @@ function init() {
    if (typeof setupSecretFlightMode === 'function') setupSecretFlightMode();
    // Prepare SFX system
    if (typeof setupSfx === 'function') setupSfx();
+   // Prepare damage FX overlay
+   setupDamageFx();
 }
 
 async function loadShipModel() {
@@ -756,6 +796,217 @@ async function loadShipModel() {
    });
 }
 
+// Simple vignette shader pass for boost effect
+function createVignettePass(){
+   const VignetteShader = {
+      uniforms: {
+         tDiffuse: { value: null },
+         amount: { value: 0.0 }, // 0..1
+      },
+      vertexShader: `
+         varying vec2 vUv;
+         void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }
+      `,
+      fragmentShader: `
+         uniform sampler2D tDiffuse;
+         uniform float amount;
+         varying vec2 vUv;
+         void main(){
+            vec4 col = texture2D(tDiffuse, vUv);
+            // radial factor from center
+            vec2 p = vUv * 2.0 - 1.0;
+            float r = clamp(length(p), 0.0, 1.0);
+            // ease curve for soft edges
+            float vig = smoothstep(0.7, 1.0, r);
+            // darken edges slightly and add a tiny warm tint on boost
+            float dark = mix(1.0, 0.92, amount * vig);
+            vec3 tint = mix(col.rgb, col.rgb * vec3(1.02, 0.98, 0.95), amount * vig * 0.6);
+            gl_FragColor = vec4(tint * dark, col.a);
+         }
+      `
+   };
+   const pass = new THREE.ShaderPass(VignetteShader);
+   pass.renderToScreen = false;
+   return pass;
+}
+
+// Speed lines (boost effect): a pool of camera-facing streak sprites spawned ahead of the camera
+function createSpeedLines(){
+   // Generate a vertical streak texture (white core fading to transparent)
+   const size = { w: 16, h: 128 };
+   const canvas = document.createElement('canvas');
+   canvas.width = size.w; canvas.height = size.h;
+   const ctx = canvas.getContext('2d');
+   const grad = ctx.createLinearGradient(0, 0, 0, size.h);
+   grad.addColorStop(0.00, 'rgba(255,255,255,0.0)');
+   grad.addColorStop(0.15, 'rgba(255,255,255,0.3)');
+   grad.addColorStop(0.50, 'rgba(255,255,255,0.9)');
+   grad.addColorStop(0.85, 'rgba(255,255,255,0.3)');
+   grad.addColorStop(1.00, 'rgba(255,255,255,0.0)');
+   ctx.fillStyle = grad;
+   ctx.fillRect(0, 0, size.w, size.h);
+   const streakTex = new THREE.CanvasTexture(canvas);
+   streakTex.minFilter = THREE.LinearFilter;
+   streakTex.magFilter = THREE.LinearFilter;
+   streakTex.wrapS = THREE.ClampToEdgeWrapping;
+   streakTex.wrapT = THREE.ClampToEdgeWrapping;
+   speedLines.texture = streakTex;
+
+   const material = new THREE.SpriteMaterial({
+      map: streakTex,
+      color: 0x99ccff,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      depthTest: false,
+      opacity: 0.0
+   });
+   const group = new THREE.Group();
+   group.renderOrder = 999; // draw late
+   scene.add(group);
+   speedLines.group = group;
+   const COUNT = 90;
+   for (let i=0;i<COUNT;i++){
+      const sp = new THREE.Sprite(material.clone());
+      sp.scale.set(0.06, 3.0, 1);
+      sp.visible = false;
+      // Rotate 90 degrees so streaks are horizontal on screen
+      sp.material.rotation = Math.PI * 0.5;
+      group.add(sp);
+      speedLines.sprites.push({ sprite: sp, vel: 0, life: 0, maxLife: 1 });
+   }
+}
+
+function updateSpeedLines(dt){
+   if (!speedLines.group) return;
+   // Determine activation from boostFx (global)
+   const active = boostFx > 0.05;
+   speedLines.active = active;
+   speedLines.group.visible = active;
+   if (!active) {
+      // fade out smoothly
+      for (const s of speedLines.sprites) {
+         if (s.sprite.material.opacity > 0) {
+            s.sprite.material.opacity = Math.max(0, s.sprite.material.opacity - dt * 2.5);
+         }
+      }
+      return;
+   }
+   // Derive camera basis
+   const q = camera.quaternion;
+   const fwd = new THREE.Vector3(0,0,-1).applyQuaternion(q);
+   const right = new THREE.Vector3(1,0,0).applyQuaternion(q);
+   const up = new THREE.Vector3(0,1,0).applyQuaternion(q);
+
+   const spread = 16; // half-width/height of spawn box
+   const minZ = 18, maxZ = 110; // distance ahead
+   const baseSpeed = 180, extra = 420; // units/sec along forward
+   const targetOpacity = 0.15 + 0.45 * THREE.MathUtils.clamp(boostFx, 0, 1);
+   for (const s of speedLines.sprites) {
+      const sp = s.sprite;
+      if (s.life <= 0 || !sp.visible) {
+         // respawn ahead of camera
+         const dx = (Math.random()*2-1) * spread;
+         const dy = (Math.random()*2-1) * spread;
+         const dz = THREE.MathUtils.lerp(minZ, maxZ, Math.random());
+         const pos = camera.position.clone()
+            .add(right.multiplyScalar(dx))
+            .add(up.multiplyScalar(dy))
+            .add(fwd.clone().multiplyScalar(dz));
+         sp.position.copy(pos);
+         // Randomize length and speed with boost
+         const len = 2.2 + Math.random()*4.5 + boostFx*3.5;
+         sp.scale.set(0.06, len, 1);
+         s.vel = (baseSpeed + extra * boostFx + Math.random()*120);
+         s.maxLife = THREE.MathUtils.mapLinear(dz, minZ, maxZ, 0.25, 0.9);
+         s.life = s.maxLife;
+         sp.visible = true;
+         sp.material.opacity = 0.0;
+      } else {
+         // move towards camera along -fwd
+         sp.position.addScaledVector(fwd, -s.vel * dt);
+         s.life -= dt;
+      }
+      // fade in/out
+      const t = 1 - (s.life / s.maxLife);
+      const o = (t < 0.2) ? (t/0.2) : (t > 0.8 ? (1 - t)/0.2 : 1);
+      sp.material.opacity = THREE.MathUtils.clamp(o * targetOpacity, 0, 1);
+      // if behind camera, force recycle
+      const toCam = sp.position.clone().sub(camera.position);
+      if (toCam.dot(fwd) < -5) {
+         s.life = 0; sp.visible = false; sp.material.opacity = 0;
+      }
+   }
+}
+
+// Create a bright Sun with lens flare and light far away in the scene
+function createSun(){
+   const loader = new THREE.TextureLoader();
+   const tex0 = loader.load('https://threejs.org/examples/textures/lensflare/lensflare0.png');
+   const tex3 = loader.load('https://threejs.org/examples/textures/lensflare/lensflare3.png');
+   const sunPos = new THREE.Vector3(4200, 1800, -4200);
+
+   // Soft halo billboard with smooth radial falloff to avoid any hard edge
+   const glowGeo = new THREE.PlaneGeometry(1, 1);
+   const glowMat = new THREE.ShaderMaterial({
+      uniforms: {
+         color: { value: new THREE.Color(0xffe4b5) },
+         intensity: { value: 1.0 },
+         power: { value: 2.6 }
+      },
+      vertexShader: `
+         varying vec2 vUv;
+         void main(){
+           vUv = uv;
+           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+         }
+      `,
+      fragmentShader: `
+         uniform vec3 color;
+         uniform float intensity;
+         uniform float power;
+         varying vec2 vUv;
+         void main(){
+           vec2 p = vUv * 2.0 - 1.0; // -1..1
+           float r = length(p);
+           float a = pow(max(0.0, 1.0 - r), power) * intensity;
+           gl_FragColor = vec4(color * a, a);
+         }
+      `,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      depthTest: false
+   });
+   sunGlow = new THREE.Mesh(glowGeo, glowMat);
+   sunGlow.scale.set(1400, 1400, 1);
+   sunGlow.position.copy(sunPos);
+   scene.add(sunGlow);
+
+   // Smaller, softer core sprite layered on top for a bright center picked up by bloom
+   const coreMat = new THREE.SpriteMaterial({ map: tex0, color: 0xffffff, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false });
+   sunCore = new THREE.Sprite(coreMat);
+   sunCore.scale.set(320, 320, 1);
+   sunCore.position.copy(sunPos);
+   scene.add(sunCore);
+
+   // Point light to act as sun illumination in that direction
+   sunLight = new THREE.PointLight(0xfff4d6, 1.35, 12000, 2);
+   sunLight.position.copy(sunPos);
+   scene.add(sunLight);
+
+   // Lens flare chained to the light (slightly toned down sizes)
+   const flare = new THREE.Lensflare();
+   flare.addElement(new THREE.LensflareElement(tex0, 600, 0, new THREE.Color(0xffeedd)));
+   flare.addElement(new THREE.LensflareElement(tex3, 100, 0.4));
+   flare.addElement(new THREE.LensflareElement(tex3, 60, 0.7));
+   flare.addElement(new THREE.LensflareElement(tex3, 80, 1.0));
+   sunLight.add(flare);
+}
+
+// Small additive sprite "nav lights" on ships to improve visibility
+// (Removed) Ship nav lights were sprite-based; no longer used for saucer enemies.
+
 function createShips(count) {
    const rng = () => Math.random();
    for (let i = 0; i < count; i++) {
@@ -771,18 +1022,20 @@ function createShips(count) {
       const normal = new THREE.Vector3(rng() * 2 - 1, rng() * 2 - 1, rng() * 2 - 1).normalize();
       const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
 
-      let mesh;
-      if (shipGLTF) {
-         mesh = shipGLTF.clone(true);
-         const s = 1.4 + rng() * 0.9; // bigger: 1.4 - 2.3
-         mesh.scale.setScalar(s);
-      } else {
-         // Fallback simple box
-         const geom = new THREE.BoxGeometry(1.2, 1.2, 3.2);
-         const mat = new THREE.MeshStandardMaterial({ color: new THREE.Color().setHSL(rng(), 0.7, 0.6), metalness: 0.3, roughness: 0.4 });
-         mesh = new THREE.Mesh(geom, mat);
-      }
+      // Enemy ship as a dark saucer: squashed sphere with a small top light
+      const saucerGeo = new THREE.SphereGeometry(1.8, 28, 20);
+      // black material with slight metalness
+        const saucerMat = new THREE.MeshStandardMaterial({ color: 0x111122, metalness: 0.7, roughness: 0.4 });
+
+
+      const mesh = new THREE.Mesh(saucerGeo, saucerMat);
+      const s = 1.2 + rng() * 0.6; // 1.2 .. 1.8 overall size
+      mesh.scale.set(s, 0.2 * s, s); // flatten Y for saucer shape
       scene.add(mesh);
+      // Single point light on top for a subtle beacon
+      const topLight = new THREE.PointLight(0x88aaff, 0.8, 63, 2);
+      topLight.position.set(0, 1.0, 0);
+      mesh.add(topLight);
 
       // Create a glow trail for this ship
    const trailLen = 96; // longer trail
@@ -803,7 +1056,7 @@ function createShips(count) {
       trailGeom.setAttribute('color', new THREE.BufferAttribute(trailColors, 3));
             const trailMat = new THREE.PointsMaterial({
         map: trailTexture,
-               size: 1.8, // thinner points
+               size: 1.2, // smaller points for tighter trails
         transparent: true,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
@@ -811,30 +1064,42 @@ function createShips(count) {
         color: 0xffffff,
         sizeAttenuation: true
       });
-      const trail = new THREE.Points(trailGeom, trailMat);
+   const trail = new THREE.Points(trailGeom, trailMat);
       scene.add(trail);
 
-      ships.push({ mesh, radius, ecc, eccPhase, speed, phase, q, trail: { len: trailLen, geom: trailGeom, positions: trailPositions, colors: trailColors } });
+      ships.push({ mesh, radius, ecc, eccPhase, speed, phase, q, trail: { len: trailLen, geom: trailGeom, positions: trailPositions, colors: trailColors }, trailObj: trail, prevPos: null, planetId: null, center: earth.position.clone() });
    }
 }
 
 function updateShips(elapsed) {
    for (const s of ships) {
       const t = s.speed * elapsed + s.phase;
-   // Apply eccentricity to vary distance over time
-   const rNow = s.radius * (1 - 0.4 * s.ecc * Math.cos(t * 0.7 + s.eccPhase));
-   const base = new THREE.Vector3(Math.cos(t) * rNow, Math.sin(t) * rNow, 0);
+      // Apply eccentricity to vary distance over time
+      const rNow = s.radius * (1 - 0.4 * s.ecc * Math.cos(t * 0.7 + s.eccPhase));
+      const base = new THREE.Vector3(Math.cos(t) * rNow, Math.sin(t) * rNow, 0);
       base.applyQuaternion(s.q);
-      const pos = base.add(earth.position);
+      const center = s.center || earth.position;
+      const pos = base.add(center);
       s.mesh.position.copy(pos);
 
-   // Orient along tangent (nose toward forward). With model pre-rotated to -Z forward, no extra yaw needed.
-   const tangent = new THREE.Vector3(-Math.sin(t) * s.radius, Math.cos(t) * s.radius, 0).applyQuaternion(s.q).normalize();
-   const forward = pos.clone().add(tangent);
-   s.mesh.lookAt(forward);
+      // Face along actual velocity direction using previous position when available
+      let vel = null;
+      if (s.prevPos) {
+        vel = pos.clone().sub(s.prevPos);
+      } else {
+        // fallback to analytical tangent for first frame
+        vel = new THREE.Vector3(-Math.sin(t) * rNow, Math.cos(t) * rNow, 0).applyQuaternion(s.q);
+      }
+         if (vel.lengthSq() > 1e-6) {
+            const forward = pos.clone().add(vel.normalize());
+            s.mesh.lookAt(forward);
+            // Apply fixed left yaw so the model's nose truly matches velocity direction
+            s.mesh.quaternion.multiply(ENEMY_YAW_LEFT);
+         }
+      s.prevPos = pos.clone();
 
-      // Update trail: shift positions down and write the new head position
-      const tp = s.trail.positions;
+      // Update trail: shift positions down and write the new head position slightly behind the ship
+   const tp = s.trail.positions;
       const len = s.trail.len;
       // shift: from tail to head
       for (let i = len - 1; i > 0; i--) {
@@ -842,7 +1107,13 @@ function updateShips(elapsed) {
         tp[i * 3 + 1] = tp[(i - 1) * 3 + 1];
         tp[i * 3 + 2] = tp[(i - 1) * 3 + 2];
       }
-      tp[0] = pos.x; tp[1] = pos.y; tp[2] = pos.z;
+      let headPos = pos;
+      if (vel && vel.lengthSq() > 1e-10) {
+         const offset = 1.6 * (s.mesh.scale && s.mesh.scale.x ? s.mesh.scale.x : 1);
+         const back = vel.clone().normalize().multiplyScalar(offset);
+         headPos = pos.clone().sub(back);
+      }
+      tp[0] = headPos.x; tp[1] = headPos.y; tp[2] = headPos.z;
       s.trail.geom.attributes.position.needsUpdate = true;
    }
 }
@@ -862,11 +1133,30 @@ function animate() {
    }
    if (earth) {
       earth.rotation.y += 0.0008; // slow Earth spin
+      // Subtle emissive flicker to make orange "fires" feel alive
+      const base = 0.6, amp = 0.12, freq = 3.2;
+      const eInt = base + amp * (0.5 + 0.5 * Math.sin(now * freq));
+      if (earth.material && 'emissiveIntensity' in earth.material) {
+         earth.material.emissiveIntensity = eInt;
+      }
+   }
+   // Keep sun halo facing the camera for a perfect billboard
+   if (sunGlow) {
+      sunGlow.quaternion.copy(camera.quaternion);
    }
    updateShips(elapsed);
 
+   // Process a few deferred cleanups per frame to avoid GC spikes
+   if (cleanupQueue && cleanupQueue.length) {
+      const n = Math.min(3, cleanupQueue.length);
+      for (let i = 0; i < n; i++) {
+         try { cleanupQueue.shift()?.(); } catch(_){ }
+      }
+   }
+
       if (flightMode) {
          updateFlight(dt);
+         updateSpeedLines(dt);
          updateBullets(dt);
          updateExplosions(dt);
          updateEnemiesFire(dt);
@@ -886,6 +1176,29 @@ function animate() {
          camera.lookAt(earth.position);
       }
 
+      // Apply camera shake at the end so it affects the final view
+      if (shakeTime > 0) {
+         const t = shakeTime / shakeDuration;
+         const s = shakeMagnitude * t * t; // ease-out by squaring
+         const rW = new THREE.Vector3(1,0,0).applyQuaternion(camera.quaternion);
+         const uW = new THREE.Vector3(0,1,0).applyQuaternion(camera.quaternion);
+         const fW = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
+         camera.position
+            .addScaledVector(rW, (Math.random()*2-1) * 0.06 * s)
+            .addScaledVector(uW, (Math.random()*2-1) * 0.05 * s)
+            .addScaledVector(fW, (Math.random()*2-1) * 0.04 * s);
+         const e = new THREE.Euler((Math.random()*2-1)*0.003*s, (Math.random()*2-1)*0.003*s, 0, 'YXZ');
+         camera.quaternion.multiply(new THREE.Quaternion().setFromEuler(e));
+         shakeTime = Math.max(0, shakeTime - dt);
+      }
+
+      // Damage flash fade
+      if (damageFlashEl) {
+         // Exponential decay
+         damageFlashAlpha = Math.max(0, damageFlashAlpha * Math.exp(-dt * 6));
+         damageFlashEl.style.backgroundColor = `rgba(255, 40, 20, ${0.55 * damageFlashAlpha})`;
+      }
+
       composer.render();
 }
 function onWindowResize() {
@@ -898,13 +1211,100 @@ function onWindowResize() {
       }
 }
 
-init();
+// Defer init() call until after helper functions (planets, curiosa) are defined
 </script>
 <script>
+// Distant planets and curiosa handling
+function createDistantPlanets(){
+   const makePlanet = (id, pos, color, radius, enemyCount)=>{
+      const geom = new THREE.SphereGeometry(radius, 32, 32);
+      const mat = new THREE.MeshStandardMaterial({ color, metalness: 0.0, roughness: 1.0, emissive: 0x000000 });
+      const mesh = new THREE.Mesh(geom, mat);
+      mesh.position.copy(pos);
+      scene.add(mesh);
+      const planet = { id, mesh, radius, enemies: [], revealed: false };
+      planets.push(planet);
+      // spawn a few enemies orbiting this planet
+      const planeQ = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,0,1), new THREE.Vector3(Math.random(),Math.random(),Math.random()).normalize());
+      for (let i=0;i<enemyCount;i++) {
+         const sh = createPlanetEnemy(planet, planeQ);
+         planet.enemies.push(sh);
+      }
+   };
+   makePlanet('p1', new THREE.Vector3(3000, 1200, -3500), 0x6699ff, 140, 3);
+   makePlanet('p2', new THREE.Vector3(-4200, -1800, 2800), 0xff8844, 180, 3);
+   makePlanet('p3', new THREE.Vector3(5200, -900, 4300), 0x88ff66, 160, 2);
+   makePlanet('p4', new THREE.Vector3(-5800, 2100, -4800), 0xbb88ff, 200, 4);
+}
+
+function createPlanetEnemy(planet, planeQ){
+   // parameters
+   const radius = 260 + Math.random()*220;
+   const ecc = Math.random()*0.25;
+   const eccPhase = Math.random()*Math.PI*2;
+   const speed = (0.04 + Math.random()*0.12) * (Math.random()<0.5 ? -1 : 1);
+   const phase = Math.random()*Math.PI*2;
+   // mesh: dark saucer (squashed sphere) with a top light
+   const saucerGeo = new THREE.SphereGeometry(1.8, 28, 20);
+   const saucerMat = new THREE.MeshStandardMaterial({ color: 0x111122, metalness: 0.7, roughness: 0.4 });
+   const mesh = new THREE.Mesh(saucerGeo, saucerMat);
+   const s = 1.2 + Math.random() * 0.6; // match near-Earth saucers: 1.2..1.8
+   mesh.scale.set(s, 0.2 * s, s); // flatter profile like near-Earth
+   scene.add(mesh);
+   const topLight = new THREE.PointLight(0x88aaff, 0.8, 63, 2);
+   topLight.position.set(0, 1.0, 0);
+   mesh.add(topLight);
+   // trail
+   const trailLen = 72;
+   const trailPositions = new Float32Array(trailLen * 3);
+   const trailColors = new Float32Array(trailLen * 3);
+   for (let j=0;j<trailLen;j++){
+      const t = 1 - j/(trailLen-1);
+      const idx=j*3; trailPositions[idx]=0; trailPositions[idx+1]=0; trailPositions[idx+2]=0;
+      trailColors[idx]=1.0*t; trailColors[idx+1]=0.25*t; trailColors[idx+2]=0.15*t;
+   }
+   const trailGeom = new THREE.BufferGeometry();
+   trailGeom.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
+   trailGeom.setAttribute('color', new THREE.BufferAttribute(trailColors, 3));
+   const trailMat = new THREE.PointsMaterial({ map: trailTexture, size: 1.1, transparent: true, depthWrite:false, blending: THREE.AdditiveBlending, vertexColors:true, color:0xffffff, sizeAttenuation:true });
+   const trailObj = new THREE.Points(trailGeom, trailMat);
+   scene.add(trailObj);
+
+   const ship = { mesh, radius, ecc, eccPhase, speed, phase, q: planeQ, trail: { len: trailLen, geom: trailGeom, positions: trailPositions, colors: trailColors }, trailObj, prevPos:null, planetId: planet.id, center: planet.mesh.position.clone(), ai: { cooldown: 1.2, timer: Math.random()*1.2 } };
+   ships.push(ship);
+   return ship;
+}
+
+const revealedPlanets = new Set();
+function maybeShowCuriosa(planetId){
+   if (revealedPlanets.has(planetId)) return;
+   // any ships remaining for this planet?
+   for (const s of ships){ if (s.planetId === planetId) return; }
+   revealedPlanets.add(planetId);
+   const text = curiosa[planetId] || 'Unknown';
+   showCuriosaModal(text);
+}
+
+function showCuriosaModal(text){
+   let el = document.getElementById('curiosaModal');
+   if (!el){
+      el = document.createElement('div');
+      el.id = 'curiosaModal';
+      el.className = 'modal-backdrop';
+      el.innerHTML = `<div class="modal-card"><h2>Discovery</h2><p id="curiosaText"></p><div class="modal-actions"><button id="curiosaOk">OK</button></div></div>`;
+      document.body.appendChild(el);
+   }
+   el.style.display='';
+   const p = el.querySelector('#curiosaText'); if (p) p.textContent = text;
+   const btn = el.querySelector('#curiosaOk'); if (btn) btn.onclick = ()=>{ el.style.display='none'; };
+}
+   // Now that helpers exist, run init
+   init();
 // Background YouTube audio (hidden player)
 let ytPlayer = null;
 let ytReady = false;
 let ytPlayWhenReady = false;
+let ytLoopInterval = null;
 
 function createYouTubePlayer(){
    if (ytPlayer || !(window.YT && YT.Player)) return;
@@ -927,9 +1327,22 @@ function createYouTubePlayer(){
                try { e.target.setVolume(100); e.target.playVideo(); } catch(_){}
                ytPlayWhenReady = false;
             }
+            ensureYtLoop();
          }
       }
    });
+}
+
+// Damage FX helpers
+function setupDamageFx(){
+   damageFlashEl = document.getElementById('damageFlash');
+}
+
+function onPlayerDamaged(amount){
+   // Flash intensity and shake scale with damage amount
+   damageFlashAlpha = Math.min(1, damageFlashAlpha + (amount * 0.04));
+   shakeTime = Math.min(shakeDuration, shakeTime + 0.10 + amount * 0.004);
+   shakeMagnitude = Math.min(1.0, 0.4 + amount * 0.03);
 }
 
 window.onYouTubeIframeAPIReady = function(){
@@ -942,9 +1355,24 @@ function startBackgroundYouTube(){
    if (!ytPlayer) createYouTubePlayer();
    if (ytPlayer && ytReady) {
       try { ytPlayer.setVolume(100); ytPlayer.playVideo(); } catch(_){/* ignore */}
+      ensureYtLoop();
    } else {
       ytPlayWhenReady = true;
    }
+}
+
+function ensureYtLoop(){
+   if (ytLoopInterval) return;
+   ytLoopInterval = setInterval(()=>{
+      try {
+         if (!ytPlayer || !ytReady || !ytPlayer.getCurrentTime) return;
+         const t = ytPlayer.getCurrentTime();
+         if (t >= 90) {
+            ytPlayer.seekTo(0, true);
+            ytPlayer.playVideo();
+         }
+      } catch(_){}
+   }, 1000);
 }
 
 // Local audio playback for NeoFuture (requires you to place ./audio/neofuture.mp3)
@@ -1023,6 +1451,18 @@ function startBackgroundYouTube(){
       if (window.__sfxInitialized) return; // idempotent
       window.__sfxInitialized = true;
       function ensureCtx(){ if (!sfxCtx) sfxCtx = new (window.AudioContext||window.webkitAudioContext)(); return sfxCtx; }
+      function reverseAudioBuffer(ctx, buf){
+         try {
+            const numCh = buf.numberOfChannels;
+            const out = ctx.createBuffer(numCh, buf.length, buf.sampleRate);
+            for (let ch=0; ch<numCh; ch++){
+               const src = buf.getChannelData(ch);
+               const dst = out.getChannelData(ch);
+               for (let i=0, j=src.length-1; i<src.length; i++, j--){ dst[i] = src[j]; }
+            }
+            return out;
+         } catch(_) { return null; }
+      }
       async function loadBuffer(url){
          try {
             const ctx = ensureCtx();
@@ -1040,6 +1480,8 @@ function startBackgroundYouTube(){
       loadBuffer('./audio/scificlick.wav').then(buf=>{ sfx.click = buf; });
       loadBuffer('./audio/laser-shot.wav').then(buf=>{ sfx.laser = buf; });
       loadBuffer('./audio/explosion.wav').then(buf=>{ sfx.explosion = buf; });
+   // Optional whoosh for boost engage + reversed for release
+   loadBuffer('./audio/boost.wav').then(buf=>{ sfx.boost = buf; const ctx = ensureCtx(); sfx.boostRev = buf ? reverseAudioBuffer(ctx, buf) : null; });
    }
 
    function playSfx(name, gain=0.9){
@@ -1101,6 +1543,10 @@ function enterFlightMode(){
    // Update HUD
    const hud = document.querySelector('.hud');
    if (hud) hud.textContent = `FLIGHT MODE — WASD move • Mouse aim • Click to fire • Shift boost • ESC — Score: 0 | Health: ${playerHealth}`;
+   // Show healthbar
+   updateHealthbar(playerHealth);
+   const hb = document.getElementById('healthbar');
+   if (hb) { hb.style.display = ''; hb.setAttribute('aria-hidden','false'); }
 
    // Try pointer lock on canvas to capture mouse for aim
    const canvas = renderer.domElement;
@@ -1128,14 +1574,14 @@ function enterFlightMode(){
       playerShip.quaternion.copy(camera.quaternion);
 
    // Create engine glow sprites (left/right) as children of the ship parent (orange)
-   const glowMat = new THREE.SpriteMaterial({ map: trailTexture, color: 0xff7a1a, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending });
+   const glowMat = new THREE.SpriteMaterial({ map: trailTexture, color: 0xff7a1a, transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending });
    const glowL = new THREE.Sprite(glowMat.clone());
    const glowR = new THREE.Sprite(glowMat.clone());
    // Position behind the ship in parent local space (forward = -Z, engines at +Z)
-   glowL.position.set(-0.6, -0.1, 2.3);
-   glowR.position.set( 0.6, -0.1, 2.3);
-   glowL.scale.set(0.6, 0.6, 0.6);
-   glowR.scale.set(0.6, 0.6, 0.6);
+   glowL.position.set(-0.45, -0.12, 1.6);
+   glowR.position.set( 0.45, -0.12, 1.6);
+   glowL.scale.set(0.35, 0.35, 0.35);
+   glowR.scale.set(0.35, 0.35, 0.35);
    playerShip.add(glowL);
    playerShip.add(glowR);
       engineGlows = [glowL, glowR];
@@ -1215,6 +1661,17 @@ function enterFlightMode(){
    initEngineAudio();
 }
 
+function updateHealthbar(value){
+   const hb = document.getElementById('healthbar');
+   if (!hb) return;
+   const fill = hb.querySelector('.fill');
+   const label = hb.querySelector('.label');
+   const pct = Math.max(0, Math.min(100, Math.round(value)));
+   if (fill) fill.style.width = pct + '%';
+   if (label) label.textContent = pct.toString();
+   if (pct <= 30) hb.classList.add('low'); else hb.classList.remove('low');
+}
+
 function updateFlight(dt){
    // Apply mobile look deltas (if any) to targets before smoothing
    if (mobile.active && (mobile.lookDelta.x !== 0 || mobile.lookDelta.y !== 0)) {
@@ -1236,7 +1693,9 @@ function updateFlight(dt){
    const right = new THREE.Vector3(1,0,0).applyQuaternion(q);
    const up = new THREE.Vector3(0,1,0).applyQuaternion(q);
    // Gradual acceleration: accelerate velocity toward desired input direction
-   const targetSpeed = keys.shift ? 80 : 40; // units/sec
+   const baseSpeed = 60;
+   const boostSpeed = 220;
+   const targetSpeed = keys.shift ? boostSpeed : baseSpeed; // units/sec
    let wish = new THREE.Vector3();
    // Desktop keys
    if (keys.w) wish.add(fwd);
@@ -1258,7 +1717,7 @@ function updateFlight(dt){
       }
    }
    if (wish.lengthSq() > 0 && !mobile.active) wish.normalize().multiplyScalar(targetSpeed);
-   const acc = keys.shift ? 160 : 90; // units/sec^2 (reduced for smoother accel)
+   const acc = keys.shift ? 420 : 120; // stronger acceleration when boosting
    const toTarget = wish.clone().sub(playerVel);
    const maxDelta = acc * dt;
    if (toTarget.length() > maxDelta) {
@@ -1270,6 +1729,27 @@ function updateFlight(dt){
    playerVel.multiplyScalar(Math.max(0, 1 - drag * dt));
    camera.position.addScaledVector(playerVel, dt);
 
+   // Planet collisions: instant death (Earth and distant planets)
+   if (earth) {
+      const earthR = 20.0; // matches earth sphere
+      const d = camera.position.distanceTo(earth.position);
+      if (d < earthR + 0.1) {
+         // Game over on impact
+         setTimeout(()=>{ location.reload(); }, 100);
+         return; // stop further updates this frame
+      }
+   }
+   if (planets && planets.length) {
+      for (const p of planets) {
+         const r = (p && typeof p.radius === 'number') ? p.radius : 120;
+         const d = camera.position.distanceTo(p.mesh.position);
+         if (d < r + 1.0) { // small allowance for visual surface
+            setTimeout(()=>{ location.reload(); }, 100);
+            return;
+         }
+      }
+   }
+
    // Update engine audio (idle vs thrust)
    // Throttle based on forward speed component relative to target speed
    const forwardSpeed = playerVel.dot(fwd);
@@ -1279,6 +1759,39 @@ function updateFlight(dt){
    const hasMobileInput = mobile.active && mobileMag > 0.05;
    engineThrottleTarget = (hasKeyInput || hasMobileInput) ? forwardRatio : 0.0;
    updateEngineAudio(dt);
+
+   // Compute boost FX target (0..1) only when clearly boosting forward
+   const wasBoost = wasBoosting;
+   const isBoosting = keys.shift && forwardRatio > 0.5;
+   // Play a short whoosh when boost engages (edge-triggered)
+   if (isBoosting && !wasBoost) {
+      // Debounce in case of rapid toggling
+      if (!lastBoostSfxTime || (gameTime - lastBoostSfxTime) > 0.25) {
+         playSfx('boost', 0.7);
+         lastBoostSfxTime = gameTime;
+      }
+   }
+   // Play reversed whoosh on boost release (falling edge)
+   if (!isBoosting && wasBoost) {
+      if (!lastBoostReleaseSfxTime || (gameTime - lastBoostReleaseSfxTime) > 0.25) {
+         playSfx('boostRev', 0.6);
+         lastBoostReleaseSfxTime = gameTime;
+      }
+   }
+   const boostTarget = isBoosting ? THREE.MathUtils.clamp((forwardRatio - 0.5) / 0.5, 0, 1) : 0;
+   const boostSmooth = 1 - Math.exp(-dt * 6);
+   boostFx += (boostTarget - boostFx) * boostSmooth;
+   // Keep Afterimage disabled entirely (we'll use vignette + FOV instead)
+   if (afterimagePass) afterimagePass.enabled = false;
+   // Apply boost FX to vignette and camera FOV
+   if (vignettePass) vignettePass.uniforms.amount.value = boostFx * 0.5; // very subtle
+   const baseFov = 60, maxKick = 6; // degrees
+   const newFov = baseFov + boostFx * maxKick;
+   if (Math.abs(camera.fov - newFov) > 0.01) { camera.fov = newFov; camera.updateProjectionMatrix(); }
+   // Update boost state memory
+   wasBoosting = isBoosting;
+
+   // Boost-only motion blur: enable subtle Afterimage only when boosting
 
    // Keep player's ship attached to camera orientation/position
    if (playerShip) {
@@ -1309,24 +1822,12 @@ function updateFlight(dt){
 
       // Update engine glows placement, flicker and scale based on thrust
       const thrust = (keys.w ? 1.0 : 0.35) + (keys.shift ? 0.4 : 0);
-      if (engineGlows && engineGlows.length === 2) {
-         const rW = new THREE.Vector3(1,0,0).applyQuaternion(playerShip.quaternion);
-         const uW = new THREE.Vector3(0,1,0).applyQuaternion(playerShip.quaternion);
-         const bW = new THREE.Vector3(0,0,1).applyQuaternion(playerShip.quaternion); // behind the ship
-         const base = playerShip.position.clone().add(bW.multiplyScalar(2.3)).add(uW.multiplyScalar(-0.1));
-         const leftWorld  = base.clone().add(rW.clone().multiplyScalar(-0.6));
-         const rightWorld = base.clone().add(rW.clone().multiplyScalar( 0.6));
-         // convert to local so sprites stay children of the ship
-         const leftLocal = playerShip.worldToLocal(leftWorld.clone());
-         const rightLocal = playerShip.worldToLocal(rightWorld.clone());
-         engineGlows[0].position.copy(leftLocal);
-         engineGlows[1].position.copy(rightLocal);
-      }
+      // Engine glows have fixed local offsets on the ship; no per-frame repositioning needed
       for (const s of engineGlows) {
          const flicker = 0.7 + Math.random() * 0.6;
          const k = 1.0 + thrust * 0.6;
-         s.scale.set(0.6 * k * flicker, 0.6 * k * flicker, 1);
-         s.material.opacity = 0.6 + 0.35 * Math.random();
+         s.scale.set(0.35 * k * flicker, 0.35 * k * flicker, 1);
+         s.material.opacity = 0.5 + 0.25 * Math.random();
       }
    }
 
@@ -1439,6 +1940,8 @@ function updateEnemyBullets(dt){
       if (b.mesh.position.distanceTo(playerPos) < hitR) {
          // Damage player
          playerHealth = Math.max(0, playerHealth - 15);
+         onPlayerDamaged(15);
+         updateHealthbar(playerHealth);
          const hud = document.querySelector('.hud');
          if (hud) hud.textContent = `FLIGHT MODE — WASD move • Mouse aim • Click to fire • Shift boost • ESC — Score: ${score} | Health: ${playerHealth}`;
          // small explosion for hit
@@ -1500,14 +2003,30 @@ function updateBullets(dt){
          const dist = b.mesh.position.distanceTo(s.mesh.position);
          const hitR = 3.0; // generous hit radius
          if (dist < hitR) {
-            // Destroy ship
-            scene.remove(s.mesh);
-            if (s.trail) scene.remove(s.trail.geom ? s.trail.points || s.trail.geom : s.trail);
+            // Destroy ship and defer heavy cleanup to smooth frame time
+            const shipMesh = s.mesh;
+            const shipTrail = s.trailObj;
+            scene.remove(shipMesh);
+            if (shipTrail) scene.remove(shipTrail);
+            cleanupQueue.push(()=>{
+               try { shipMesh.geometry?.dispose?.(); } catch(_){}
+               try {
+                  if (Array.isArray(shipMesh.material)) shipMesh.material.forEach(m=>m?.dispose?.());
+                  else shipMesh.material?.dispose?.();
+               } catch(_){}
+               if (shipTrail) {
+                  try { shipTrail.geometry?.dispose?.(); } catch(_){}
+                  try { shipTrail.material?.dispose?.(); } catch(_){}
+               }
+            });
+            const defeatedPlanet = s.planetId;
             ships.splice(j, 1);
             spawnExplosion(s.mesh.position.clone());
             score += 1;
             const hud = document.querySelector('.hud');
             if (hud) hud.textContent = `FLIGHT MODE — WASD move • Mouse aim • Click to fire • Shift boost • ESC to release — Score: ${score}`;
+            // If this ship belonged to a planet and all of that planet's enemies are gone, show curiosa
+            if (defeatedPlanet) maybeShowCuriosa(defeatedPlanet);
             // Remove bullet on hit
             scene.remove(b.mesh);
             bullets.splice(i, 1);
@@ -1522,7 +2041,7 @@ function updateBullets(dt){
 }
 
 function spawnExplosion(pos){
-   const count = 36;
+   const count = 24;
    const positions = new Float32Array(count * 3);
    const colors = new Float32Array(count * 3);
    const velocities = [];
