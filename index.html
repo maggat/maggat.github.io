@@ -133,6 +133,35 @@
    .corner-links .patreon { fill: #FF424D; }
    .corner-links a:hover .spotify, .corner-links a:hover .patreon { fill: #33b3ff; }
 
+   .fullscreen-toggle {
+      position: fixed;
+      top: 12px;
+      right: 12px;
+      padding: 8px 14px;
+      font-family: 'VT323', monospace;
+      font-size: 16px;
+      letter-spacing: 1px;
+      color: #cfeeff;
+      background: rgba(10, 18, 24, 0.75);
+      border: 1px solid rgba(80, 200, 255, 0.6);
+      border-radius: 8px;
+      text-shadow: 0 0 8px rgba(51, 179, 255, 0.8);
+      box-shadow: 0 0 14px rgba(51, 179, 255, 0.45);
+      cursor: pointer;
+      z-index: 32;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+   }
+
+   .fullscreen-toggle:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 0 22px rgba(51, 179, 255, 0.75);
+   }
+
+   .fullscreen-toggle:focus {
+      outline: none;
+      box-shadow: 0 0 0 2px rgba(16, 190, 255, 0.45), 0 0 22px rgba(51, 179, 255, 0.8);
+   }
+
    /* Darkening overlay under text */
    .shade {
       position: fixed;
@@ -241,6 +270,16 @@
      .healthbar .label { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); color: #fff; font-family: 'VT323', monospace; font-size: 14px; text-shadow: 0 0 6px rgba(0,0,0,0.6); }
    /* Damage flash overlay */
    #damageFlash { position: fixed; inset: 0; pointer-events: none; z-index: 40; background: rgba(255,30,20,0); mix-blend-mode: screen; }
+   /* Overdrive bar (below healthbar) */
+   .overdrivebar { position: fixed; top: 36px; left: 150px; width: 180px; height: 12px; border: 1px solid rgba(80,240,255,0.7); background: rgba(0,20,28,0.5); backdrop-filter: blur(3px); z-index: 30; display: none; }
+   .overdrivebar .fill { height: 100%; width: 0%; background: linear-gradient(90deg, #33e6ff, #009db3); box-shadow: 0 0 10px rgba(0,200,220,0.8) inset; transition: width 100ms linear; }
+   .overdrivebar .label { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); color: #bdf6ff; font-family: 'VT323', monospace; font-size: 12px; text-shadow: 0 0 6px rgba(0,0,0,0.6); }
+   /* Overheat bar (below overdrive) */
+   .overheatbar { position: fixed; top: 54px; left: 150px; width: 180px; height: 12px; border: 1px solid rgba(255,140,40,0.7); background: rgba(20,8,0,0.5); backdrop-filter: blur(3px); z-index: 30; display: none; }
+   .overheatbar .fill { height: 100%; width: 0%; background: linear-gradient(90deg, #ffaa33, #ff4422); box-shadow: 0 0 10px rgba(255,80,40,0.8) inset; transition: width 100ms linear; }
+   .overheatbar.overheated .fill { background: linear-gradient(90deg, #ff4422, #cc1100); animation: overheat-pulse 0.5s ease-in-out infinite alternate; }
+   .overheatbar .label { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); color: #ffd6aa; font-family: 'VT323', monospace; font-size: 12px; text-shadow: 0 0 6px rgba(0,0,0,0.6); }
+   @keyframes overheat-pulse { from { opacity: 0.7; } to { opacity: 1.0; } }
   /* Mobile controls overlay */
   .mobile-controls { position: fixed; inset: 0; z-index: 25; pointer-events: none; }
   .mobile-controls .pad {
@@ -298,11 +337,16 @@
 <body>
 <div id="container"></div>
 <div class="shade"></div>
+<button id="fullscreenToggle" class="fullscreen-toggle" type="button" aria-pressed="false">FULLSCREEN</button>
 <!-- HUD for score/health -->
 <div class="hud"></div>
 <!-- Healthbar -->
 <div id="healthbar" class="healthbar" aria-hidden="true"><div class="fill"></div><div class="label">100</div></div>
 <div id="damageFlash" aria-hidden="true"></div>
+<!-- Overdrive bar -->
+<div id="overdrive" class="overdrivebar" aria-hidden="true"><div class="fill"></div><div class="label">OVERDRIVE</div></div>
+<!-- Overheat bar -->
+<!-- <div id="overheat" class="overheatbar" aria-hidden="true"><div class="fill"></div><div class="label">HEAT</div></div> -->
 <!-- Intro modal -->
 <div id="readyModal" class="modal-backdrop">
    <div class="modal-card">
@@ -374,6 +418,8 @@
 <!-- Motion blur removed -->
 <!-- Explosion pooling system -->
 <script src="js/explosions.js"></script>
+<!-- Gamepad support -->
+<script src="js/gamepad.js"></script>
 <script>
 let scene, camera, renderer, stars;
 let earth, ships = [], clock;
@@ -390,10 +436,10 @@ let planets = []; // distant planets with enemies
 // Speed lines effect state
 let speedLines = { group: null, sprites: [], texture: null, active: false };
 const curiosa = {
-   p1: 'Per is great at imitating gunde svan',
-   p2: 'Adam is a big blizzard fan',
-   p3: 'Benjamin is a great musician',
-   p4: 'Apoc plays all instruments known to mankind'
+   p1: 'Per grew up deep in the forest, passionate about fly fishing in remote woodland lakes, testing his own handmade flies. A true forest dweller at heart.',
+   p2: 'Adam is a big Blizzard fan who brings strategic thinking and gaming passion to the band\'s creative process. He is also a wheelie expert.',
+   p3: 'Benjamin is the band\'s philosopher and gentle clown. He feels deeply, writes nostalgic and emotionally charged music, and carefully assembled each band member like puzzle pieces into this world.',
+   p4: 'Apoc is a multi-instrumentalist and musical visionary who weaves together the band\'s diverse sounds, channeling raw emotion and technical mastery into every performance.'
 };
 // Smooth flight feel state
 let shipSway = 0, shipSwayTarget = 0;           // lateral offset (meters)
@@ -432,14 +478,23 @@ const keys = { w:false, a:false, s:false, d:false, q:false, e:false, shift:false
 let bullets = [];
 let explosions = [];
 let enemyBullets = [];
+let flashes = [];
+let pickups = [];
+let asteroids = [];
+let pickupRespawns = [];
 let lastTime = 0;
 let fireCooldown = 0;
 let score = 0;
+let weaponHeat = 0; // 0-1, builds when firing
+let weaponOverheated = false;
+let overheatCooldownTimer = 0;
 let bulletGeom, bulletMat;
 let enemyBulletGeom, enemyBulletMat;
 let playerHealth = 100;
 let victoryShown = false;
 let gameTime = 0;
+// Enemy fire grace period: enemies won't shoot until after this timestamp (in seconds)
+let enemyFireUnlockAt = 0;
 // SFX buffers
 let sfxCtx = null;
 const sfx = { click: null, laser: null, explosion: null, boost: null, boostRev: null };
@@ -449,50 +504,110 @@ let lastBoostReleaseSfxTime = 0; // debounce for release whoosh
 let engine = { initialized:false, master:null, baseOsc:null, baseGain:null, overtoneOsc:null, overtoneGain:null };
 let engineThrottle = 0, engineThrottleTarget = 0;
 let canvas = null;
+let mouseFiring = false; // hold-to-fire on desktop
 
 // Model URL (place your file at this path or change the URL to match your asset)
 const SHIP_MODEL_URL = './3d/ship.glb';
 
+function setupFullscreenToggle(){
+   const btn = document.getElementById('fullscreenToggle');
+   if (!btn) return;
+
+   const updateLabel = () => {
+      const active = !!document.fullscreenElement || !!document.webkitFullscreenElement;
+      btn.textContent = active ? 'EXIT FULLSCREEN' : 'FULLSCREEN';
+      btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+      btn.title = active ? 'Exit fullscreen (Esc)' : 'Enter fullscreen';
+   };
+
+   const request = () => {
+      const elem = document.documentElement;
+      const fn = elem.requestFullscreen || elem.webkitRequestFullscreen || elem.mozRequestFullScreen || elem.msRequestFullscreen;
+      if (fn) {
+         try {
+            const result = fn.call(elem);
+            if (result && typeof result.catch === 'function') {
+               result.catch(() => {});
+            }
+         } catch(_){ }
+      }
+   };
+
+   const exit = () => {
+      const fn = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen || document.msExitFullscreen;
+      if (fn) {
+         try {
+            const result = fn.call(document);
+            if (result && typeof result.catch === 'function') {
+               result.catch(() => {});
+            }
+         } catch(_){ }
+      }
+   };
+
+   btn.addEventListener('click', () => {
+      const active = !!document.fullscreenElement || !!document.webkitFullscreenElement;
+      if (active) {
+         exit();
+      } else {
+         request();
+      }
+   });
+
+   document.addEventListener('fullscreenchange', updateLabel);
+   document.addEventListener('webkitfullscreenchange', updateLabel);
+   updateLabel();
+}
+
 function setupMobileControls(){
-   // Detect touch/coarse pointer devices
+   // Determine if we're on a touch/coarse device
    const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || window.matchMedia('(pointer: coarse)').matches;
    mobile.active = !!isTouch;
    const controls = document.querySelector('.mobile-controls');
    if (!controls) return;
-   if (!isTouch) {
-      // Keep hidden on desktops
-      controls.setAttribute('aria-hidden', 'true');
-      for (let j = ships.length - 1; j >= 0; j--) {
-         const s = ships[j];
-         if (s.active === false) continue;
-         const dist = b.mesh.position.distanceTo(s.mesh.position);
-   controls.setAttribute('aria-hidden', 'false');
 
-            // Deactivate pooled enemy: hide without deallocating
-            s.active = false;
-            if (s.mesh) s.mesh.visible = false;
-            if (s.trailObj) s.trailObj.visible = false;
-            const defeatedPlanet = s.planetId;
+   // Visibility helper
+   const applyVisibility = () => {
+      if (mobile.active) {
+         controls.setAttribute('aria-hidden', 'false');
+         controls.style.display = '';
+      } else {
+         controls.setAttribute('aria-hidden', 'true');
+         controls.style.display = 'none';
       }
-    }
-   function onJoyDown(e){
-      e.preventDefault();
-      mobile.touching = true; mobile.id = e.pointerId || 'p';
-      updateStick(e.clientX, e.clientY);
+   };
+   applyVisibility();
+
+   // Cache elements
+   mobile.padEl = document.getElementById('joyLeft');
+   mobile.stickEl = document.getElementById('joyStick');
+   mobile.fireBtn = document.getElementById('fireBtn');
+   const canvasEl = (renderer && renderer.domElement) ? renderer.domElement : document.getElementById('container');
+
+   // Helper to clamp stick and update mobile.move
+   function updateStick(clientX, clientY){
+      const r = mobile.padEl.getBoundingClientRect();
+      const cx = r.left + r.width * 0.5;
+      const cy = r.top + r.height * 0.5;
+      mobile.center.x = cx; mobile.center.y = cy;
+      const maxR = Math.min(r.width, r.height) * 0.5 * 0.85;
+      let dx = clientX - cx;
+      let dy = clientY - cy;
+      const len = Math.hypot(dx, dy) || 1;
+      const cl = Math.min(len, maxR);
+      dx = dx / len * cl;
+      dy = dy / len * cl;
+      if (mobile.stickEl) {
+         mobile.stickEl.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+      }
+      mobile.move.x = dx / maxR;
+      mobile.move.y = -dy / maxR;
    }
-   function onJoyMove(e){
-      if (!mobile.touching) return;
-      if ((e.pointerId || 'p') !== mobile.id) return;
-      e.preventDefault();
-      updateStick(e.clientX, e.clientY);
-   }
-   function onJoyUp(e){
-      if ((e.pointerId || 'p') !== mobile.id) return;
-      e.preventDefault();
-      mobile.touching = false; mobile.id = null;
-      mobile.move.x = 0; mobile.move.y = 0;
-      if (mobile.stickEl) mobile.stickEl.style.transform = 'translate(-50%, -50%)';
-   }
+
+   // Left pad handlers
+   function onJoyDown(e){ e.preventDefault(); mobile.touching = true; mobile.id = e.pointerId || 'p'; updateStick(e.clientX, e.clientY); }
+   function onJoyMove(e){ if (!mobile.touching) return; if ((e.pointerId || 'p') !== mobile.id) return; e.preventDefault(); updateStick(e.clientX, e.clientY); }
+   function onJoyUp(e){ if ((e.pointerId || 'p') !== mobile.id) return; e.preventDefault(); mobile.touching = false; mobile.id = null; mobile.move.x = 0; mobile.move.y = 0; if (mobile.stickEl) mobile.stickEl.style.transform = 'translate(-50%, -50%)'; }
    if (mobile.padEl) {
       mobile.padEl.addEventListener('pointerdown', onJoyDown, { passive: false });
       window.addEventListener('pointermove', onJoyMove, { passive: false });
@@ -509,39 +624,22 @@ function setupMobileControls(){
       mobile.fireBtn.addEventListener('pointerleave', stopFire, { passive: false });
    }
 
-   // Look swipe on the canvas (right side of screen or anywhere not on controls)
-   function isControlElement(el){
-      if (!el) return false;
-      return el.closest && el.closest('.mobile-controls');
-   }
-   function onLookDown(e){
-      // Ignore if starting on a control element
-      if (isControlElement(e.target)) return;
-      e.preventDefault();
-      mobile.lookId = e.pointerId || 'l';
-      mobile.prevLook.x = e.clientX; mobile.prevLook.y = e.clientY;
-   }
-   function onLookMove(e){
-      if ((e.pointerId || 'l') !== mobile.lookId) return;
-      e.preventDefault();
-      const dx = e.clientX - mobile.prevLook.x;
-      const dy = e.clientY - mobile.prevLook.y;
-      mobile.prevLook.x = e.clientX; mobile.prevLook.y = e.clientY;
-      // accumulate deltas; consumed each frame in updateFlight
-      mobile.lookDelta.x += dx;
-      mobile.lookDelta.y += dy;
-   }
-   function onLookUp(e){
-      if ((e.pointerId || 'l') !== mobile.lookId) return;
-      e.preventDefault();
-      mobile.lookId = null;
-   }
-   if (canvas) {
-      canvas.addEventListener('pointerdown', onLookDown, { passive: false });
+   // Look swipe on the canvas (ignore when starting on controls)
+   function isControlElement(el){ return !!(el && el.closest && el.closest('.mobile-controls')); }
+   function onLookDown(e){ if (isControlElement(e.target)) return; e.preventDefault(); mobile.lookId = e.pointerId || 'l'; mobile.prevLook.x = e.clientX; mobile.prevLook.y = e.clientY; }
+   function onLookMove(e){ if ((e.pointerId || 'l') !== mobile.lookId) return; e.preventDefault(); const dx = e.clientX - mobile.prevLook.x; const dy = e.clientY - mobile.prevLook.y; mobile.prevLook.x = e.clientX; mobile.prevLook.y = e.clientY; mobile.lookDelta.x += dx; mobile.lookDelta.y += dy; }
+   function onLookUp(e){ if ((e.pointerId || 'l') !== mobile.lookId) return; e.preventDefault(); mobile.lookId = null; }
+   if (canvasEl) {
+      canvasEl.addEventListener('pointerdown', onLookDown, { passive: false });
       window.addEventListener('pointermove', onLookMove, { passive: false });
       window.addEventListener('pointerup', onLookUp, { passive: false });
       window.addEventListener('pointercancel', onLookUp, { passive: false });
    }
+
+   // Re-evaluate on resize/orientation
+   const reevaluate = ()=>{ const t = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || window.matchMedia('(pointer: coarse)').matches; mobile.active = !!t; applyVisibility(); };
+   window.addEventListener('resize', reevaluate);
+   window.addEventListener('orientationchange', reevaluate);
 }
 
 function init() {
@@ -619,6 +717,10 @@ function init() {
 
    // Create distant planets with lurking enemies
    createDistantPlanets();
+
+   // Scatter turbo boost capsules and drifting asteroids in nearby space
+   createBoostPickups();
+   createAsteroids();
 
       // Earth: higher-res diffuse + specular maps; red emissive glow
    const texLoader = new THREE.TextureLoader();
@@ -972,8 +1074,8 @@ function updateSpeedLines(dt){
       }
       // fade in/out
       const t = 1 - (s.life / s.maxLife);
-   const o = (t < 0.2) ? (t/0.2) : (t > 0.8 ? (1 - t)/0.2 : 1);
-   sp.material.opacity = THREE.MathUtils.clamp(o * targetOpacity, 0, 1);
+      const o = (t < 0.2) ? (t/0.2) : (t > 0.8 ? (1 - t)/0.2 : 1);
+      sp.material.opacity = THREE.MathUtils.clamp(o * targetOpacity, 0, 1);
       // if behind camera, force recycle
       const toCam2 = sp.position.clone().sub(camera.position);
       const screenRad = Math.abs(toCam2.dot(right)) + Math.abs(toCam2.dot(up));
@@ -1208,12 +1310,26 @@ function animate() {
    }
 
       if (flightMode) {
+         // Poll gamepad input
+         if (window.GamepadController) window.GamepadController.poll();
+         // Show/hide mobile controls based on gamepad connection
+         const gamepadConnected = window.GamepadController && window.GamepadController.isConnected();
+         if (mobile.active) {
+            const controls = document.querySelector('.mobile-controls');
+            if (controls) {
+               controls.style.display = gamepadConnected ? 'none' : '';
+               controls.setAttribute('aria-hidden', gamepadConnected ? 'true' : 'false');
+            }
+         }
          updateFlight(dt);
          updateSpeedLines(dt);
          updateBullets(dt);
          updateExplosions(dt);
+         updateFlashes(dt);
          updateEnemiesFire(dt);
          updateEnemyBullets(dt);
+         updatePickups(dt);
+         updateAsteroids(dt);
          checkVictory();
       } else if (cameraOrbit && earth) {
          // Slow diagonal camera orbit around Earth when not in flight mode
@@ -1252,6 +1368,11 @@ function animate() {
          damageFlashEl.style.backgroundColor = `rgba(255, 40, 20, ${0.55 * damageFlashAlpha})`;
       }
 
+      // Overdrive HUD update
+      if (typeof updateOverdriveBar === 'function') updateOverdriveBar();
+      // Overheat HUD update
+      if (typeof updateOverheatBar === 'function') updateOverheatBar();
+
       composer.render();
 }
 function onWindowResize() {
@@ -1262,6 +1383,30 @@ function onWindowResize() {
          composer.setSize(window.innerWidth, window.innerHeight);
          if (bloomPass) bloomPass.setSize(window.innerWidth, window.innerHeight);
       }
+}
+
+// Fullscreen toggle
+function toggleFullscreen() {
+   if (!document.fullscreenElement) {
+      // Enter fullscreen
+      const elem = document.documentElement;
+      if (elem.requestFullscreen) {
+         elem.requestFullscreen();
+      } else if (elem.webkitRequestFullscreen) {
+         elem.webkitRequestFullscreen();
+      } else if (elem.msRequestFullscreen) {
+         elem.msRequestFullscreen();
+      }
+   } else {
+      // Exit fullscreen
+      if (document.exitFullscreen) {
+         document.exitFullscreen();
+      } else if (document.webkitExitFullscreen) {
+         document.webkitExitFullscreen();
+      } else if (document.msExitFullscreen) {
+         document.msExitFullscreen();
+      }
+   }
 }
 
 // Defer init() call until after helper functions (planets, curiosa) are defined
@@ -1333,6 +1478,260 @@ function createPlanetEnemy(planet, planeQ){
    return ship;
 }
 
+// Turbo boost pickups: glowing teal capsules that grant temporary overdrive
+function spawnBoostPickupRandom(){
+   const rng = Math.random;
+   const baseOrigin = (earth && earth.position) ? earth.position : new THREE.Vector3(0,0,0);
+   const r = 80 + rng()*1120; // Spread throughout space to distant planets
+   const ang1 = rng()*Math.PI*2;
+   const ang2 = (rng()*0.6 - 0.3);
+   const pos = new THREE.Vector3(
+      Math.cos(ang1)*r,
+      Math.sin(ang2)*r*0.5,
+      Math.sin(ang1)*r
+   ).add(baseOrigin);
+   // Capsule: cylinder + sphere caps
+   const cyl = new THREE.CylinderGeometry(0.6, 0.6, 2.4, 16, 1, true);
+   const mat = new THREE.MeshStandardMaterial({ color: 0x00ffee, emissive: 0x116677, emissiveIntensity: 1.2, metalness: 0.1, roughness: 0.25, transparent:true, opacity:0.95 });
+   const body = new THREE.Mesh(cyl, mat);
+   const capGeo = new THREE.SphereGeometry(0.6, 16, 12);
+   const capTop = new THREE.Mesh(capGeo, mat);
+   const capBot = new THREE.Mesh(capGeo, mat);
+   capTop.position.y = 1.2; capBot.position.y = -1.2;
+   body.add(capTop); body.add(capBot);
+   body.position.copy(pos);
+   body.rotation.x = rng()*Math.PI;
+   body.rotation.y = rng()*Math.PI;
+   // Flame sprites on ends
+   if (trailTexture){
+      const sm = new THREE.SpriteMaterial({ map: trailTexture, color: 0x55eaff, transparent:true, blending: THREE.AdditiveBlending, depthWrite:false, depthTest:false, opacity:0.9 });
+      const s1 = new THREE.Sprite(sm.clone());
+      const s2 = new THREE.Sprite(sm.clone());
+      s1.position.set(0, 1.6, 0); s1.scale.set(1.2, 1.2, 1);
+      s2.position.set(0,-1.6, 0); s2.scale.set(1.2, 1.2, 1);
+      body.add(s1); body.add(s2);
+   }
+   scene.add(body);
+   pickups.push({ mesh: body, radius: 1.2, t: rng()*Math.PI*2, origin: baseOrigin.clone(), baseRadius: 0 });
+}
+
+function createBoostPickups(){
+   const count = 14;
+   for (let i=0;i<count;i++) spawnBoostPickupRandom();
+
+   // Also spawn turbos around each distant planet
+   if (planets && planets.length) {
+      for (const planet of planets) {
+         const countPerPlanet = 3;
+         for (let i=0;i<countPerPlanet;i++) {
+            spawnBoostPickupNearPlanet(planet);
+         }
+      }
+   }
+}
+
+function spawnBoostPickupAt(originVec, baseRadius){
+   const rng = Math.random;
+   const r = (baseRadius||200) + rng()*350; // Orbit ring thickness
+   const ang1 = rng()*Math.PI*2;
+   const ang2 = (rng()*0.6 - 0.3);
+   const pos = new THREE.Vector3(
+      Math.cos(ang1)*r,
+      Math.sin(ang2)*r*0.5,
+      Math.sin(ang1)*r
+   ).add(originVec);
+   // Capsule: cylinder + sphere caps
+   const cyl = new THREE.CylinderGeometry(0.6, 0.6, 2.4, 16, 1, true);
+   const mat = new THREE.MeshStandardMaterial({ color: 0x00ffee, emissive: 0x116677, emissiveIntensity: 1.2, metalness: 0.1, roughness: 0.25, transparent:true, opacity:0.95 });
+   const body = new THREE.Mesh(cyl, mat);
+   const capGeo = new THREE.SphereGeometry(0.6, 16, 12);
+   const capTop = new THREE.Mesh(capGeo, mat);
+   const capBot = new THREE.Mesh(capGeo, mat);
+   capTop.position.y = 1.2; capBot.position.y = -1.2;
+   body.add(capTop); body.add(capBot);
+   body.position.copy(pos);
+   body.rotation.x = rng()*Math.PI;
+   body.rotation.y = rng()*Math.PI;
+   // Flame sprites on ends
+   if (trailTexture){
+      const sm = new THREE.SpriteMaterial({ map: trailTexture, color: 0x55eaff, transparent:true, blending: THREE.AdditiveBlending, depthWrite:false, depthTest:false, opacity:0.9 });
+      const s1 = new THREE.Sprite(sm.clone());
+      const s2 = new THREE.Sprite(sm.clone());
+      s1.position.set(0, 1.6, 0); s1.scale.set(1.2, 1.2, 1);
+      s2.position.set(0,-1.6, 0); s2.scale.set(1.2, 1.2, 1);
+      body.add(s1); body.add(s2);
+   }
+   scene.add(body);
+   pickups.push({ mesh: body, radius: 1.2, t: rng()*Math.PI*2, origin: originVec.clone(), baseRadius: baseRadius||200 });
+}
+
+function spawnBoostPickupNearPlanet(planet){
+   const center = planet.mesh.position;
+   const base = (planet && typeof planet.radius === 'number' ? planet.radius : 120) + 180;
+   spawnBoostPickupAt(center, base);
+}
+
+function updatePickups(dt){
+   // Handle respawns
+   if (pickupRespawns.length && typeof gameTime === 'number'){
+      for (let i = pickupRespawns.length - 1; i >= 0; i--){
+         if (gameTime >= pickupRespawns[i].at){
+            const ri = pickupRespawns[i];
+            if (ri.origin) {
+               spawnBoostPickupAt(ri.origin, ri.baseRadius);
+            } else {
+               spawnBoostPickupRandom();
+            }
+            pickupRespawns.splice(i, 1);
+         }
+      }
+   }
+
+   for (let i = pickups.length - 1; i >= 0; i--){
+      const p = pickups[i];
+      p.t += dt;
+      p.mesh.rotation.y += dt * 1.0;
+      const pulse = 0.85 + 0.25*Math.sin(p.t*3.2);
+      p.mesh.scale.setScalar(pulse);
+      // Collision with player (camera)
+      const d = camera.position.distanceTo(p.mesh.position);
+      if (d < (p.radius + 2.2)){
+         // Spark + SFX
+         spawnFlash(p.mesh.position.clone(), 10, 0x66ddff);
+         playSfx('boost', 0.8);
+         // Temporary overdrive
+         engine.pickupBoostTimer = Math.max(0, (engine.pickupBoostTimer||0)) + 3.0;
+         engine.pickupBoostMax = Math.max(engine.pickupBoostMax||0, engine.pickupBoostTimer);
+         // Remove pickup
+         scene.remove(p.mesh);
+         pickups.splice(i,1);
+         // Respawn later near the same origin if available
+         if (typeof gameTime === 'number') {
+            const baseRadius = (p.baseRadius !== undefined) ? p.baseRadius : 0;
+            pickupRespawns.push({ at: gameTime + 12, origin: p.origin || null, baseRadius });
+         }
+      }
+   }
+}
+
+// Field of brown asteroids drifting around
+function spawnAsteroidAt(pos, origin, size){
+   const rng = Math.random;
+   const s = size || (rng()*3 + 1.5);
+   const geo = new THREE.IcosahedronGeometry(s, 1);
+   const arr = geo.attributes.position.array;
+   for (let j=0;j<arr.length; j+=3){
+      const n = (rng()*0.5 + 0.75);
+      arr[j] *= n; arr[j+1]*=n; arr[j+2]*=n;
+   }
+   geo.attributes.position.needsUpdate = true;
+   geo.computeVertexNormals();
+   const mat = new THREE.MeshStandardMaterial({ color: 0x8b5a2b, roughness: 0.95, metalness: 0.02 });
+   const m = new THREE.Mesh(geo, mat);
+   m.position.copy(pos);
+   m.rotation.set(rng()*Math.PI, rng()*Math.PI, rng()*Math.PI);
+   const vel = new THREE.Vector3((rng()-0.5)*2, (rng()-0.5)*1.2, (rng()-0.5)*2);
+   scene.add(m);
+   const radius = s * 1.0; // approximate collision radius based on size
+   asteroids.push({ mesh:m, radius, size:s, vel, rot: new THREE.Vector3((rng()-0.5)*0.4, (rng()-0.5)*0.4, (rng()-0.5)*0.4), origin: origin ? origin.clone() : ((earth && earth.position) ? earth.position.clone() : new THREE.Vector3(0,0,0)) });
+}
+
+function createAsteroids(){
+   const rng = Math.random;
+
+   // Asteroids scattered from Earth throughout space
+   const countEarth = 22;
+   const baseOrigin = (earth && earth.position) ? earth.position : new THREE.Vector3(0,0,0);
+   for (let i=0;i<countEarth;i++){
+      const r = 120 + rng()*1280;
+      const ang1 = rng()*Math.PI*2;
+      const ang2 = (rng()*0.8 - 0.4);
+      const pos = new THREE.Vector3(
+         Math.cos(ang1)*r,
+         Math.sin(ang2)*r*0.6,
+         Math.sin(ang1)*r
+      ).add(baseOrigin);
+      spawnAsteroidAt(pos, baseOrigin);
+   }
+
+   // Asteroids around each distant planet
+   if (planets && planets.length) {
+      for (const planet of planets) {
+         const countPerPlanet = 12;
+         const center = planet.mesh.position;
+         for (let i=0;i<countPerPlanet;i++){
+            const r = planet.radius + 200 + rng()*400;
+            const ang1 = rng()*Math.PI*2;
+            const ang2 = (rng()*0.6 - 0.3);
+            const pos = new THREE.Vector3(
+               Math.cos(ang1)*r,
+               Math.sin(ang2)*r*0.5,
+               Math.sin(ang1)*r
+            ).add(center);
+            spawnAsteroidAt(pos, center);
+         }
+      }
+   }
+}
+
+function breakAsteroid(a){
+   // Only break very large asteroids
+   if (!a || !a.size || a.size < 3.2) return;
+   const rng = Math.random;
+   const fragments = 3 + Math.floor(rng()*3); // 3..5
+   const origin = a.origin || ((earth && earth.position) ? earth.position : new THREE.Vector3(0,0,0));
+   const centerDir = a.mesh.position.clone().sub(origin).normalize();
+   for (let i=0;i<fragments;i++){
+      const fracSize = Math.max(0.6, (a.size * 0.4) + rng()*0.6); // smaller than parent
+      const offset = centerDir.clone().multiplyScalar(0.5 + rng()*0.8).add(new THREE.Vector3((rng()-0.5)*0.6,(rng()-0.5)*0.6,(rng()-0.5)*0.6));
+      const pos = a.mesh.position.clone().add(offset);
+      spawnAsteroidAt(pos, origin, fracSize);
+      // Adjust the just-spawned asteroid's velocity to head away from center
+      const child = asteroids[asteroids.length - 1];
+      if (child) {
+         const away = centerDir.clone().multiplyScalar(2.5 + rng()*2.5);
+         child.vel.add(away);
+      }
+   }
+}
+
+function updateAsteroids(dt){
+   for (let i = asteroids.length - 1; i >= 0; i--){
+      const a = asteroids[i];
+      a.mesh.position.addScaledVector(a.vel, dt);
+      a.mesh.rotation.x += a.rot.x * dt;
+      a.mesh.rotation.y += a.rot.y * dt;
+      a.mesh.rotation.z += a.rot.z * dt;
+      // Wrap far from the asteroid's origin to keep field dense
+      const origin = (a.origin) ? a.origin : ((earth && earth.position) ? earth.position : new THREE.Vector3(0,0,0));
+      const d = a.mesh.position.distanceTo(origin);
+      if (d > 1600){
+         const dir = a.mesh.position.clone().sub(origin).normalize();
+         a.mesh.position.copy(origin).add(dir.multiplyScalar(400));
+      }
+      // Player collision
+      const pd = camera.position.distanceTo(a.mesh.position);
+      if (pd < a.radius + 2.0){
+         // Damage and destroy asteroid
+         playerHealth = Math.max(0, playerHealth - 5);
+         onPlayerDamaged(5);
+         updateHealthbar(playerHealth);
+         const explodePos = a.mesh.position.clone();
+         spawnExplosion(explodePos);
+         spawnFlash(explodePos, 8, 0xff8844);
+         playSfx('explosion', 0.8);
+         // Break large asteroids into fragments moving away from center
+         breakAsteroid(a);
+         // Remove asteroid
+         scene.remove(a.mesh);
+         if (a.mesh.geometry) a.mesh.geometry.dispose();
+         if (a.mesh.material) a.mesh.material.dispose();
+         asteroids.splice(i, 1);
+         if (playerHealth <= 0) { setTimeout(()=>location.reload(), 150); }
+      }
+   }
+}
+
 const revealedPlanets = new Set();
 function maybeShowCuriosa(planetId){
    if (revealedPlanets.has(planetId)) return;
@@ -1354,10 +1753,18 @@ function showCuriosaModal(text){
    }
    el.style.display='';
    const p = el.querySelector('#curiosaText'); if (p) p.textContent = text;
-   const btn = el.querySelector('#curiosaOk'); if (btn) btn.onclick = ()=>{ el.style.display='none'; };
+   const btn = el.querySelector('#curiosaOk');
+   if (btn) {
+      btn.onclick = ()=>{ el.style.display='none'; };
+      // Enable Enter key
+      if (typeof enableEnterKey === 'function') {
+         enableEnterKey(el, btn);
+      }
+   }
 }
    // Now that helpers exist, run init
    init();
+   setupFullscreenToggle();
 // Background YouTube audio (hidden player)
 let ytPlayer = null;
 let ytReady = false;
@@ -1382,10 +1789,19 @@ function createYouTubePlayer(){
          onReady: (e) => {
             ytReady = true;
             if (ytPlayWhenReady) {
-               try { e.target.setVolume(100); e.target.playVideo(); } catch(_){}
+               try { e.target.setVolume(30); e.target.playVideo(); } catch(_){ }
                ytPlayWhenReady = false;
             }
             ensureYtLoop();
+         },
+         onStateChange: (e) => {
+            // Auto-resume if paused or ended (state 2 = paused, 0 = ended)
+            if (e.data === 2 || e.data === 0) {
+               try {
+                  ytPlayer.seekTo(0, true);
+                  ytPlayer.playVideo();
+               } catch(_){}
+            }
          }
       }
    });
@@ -1396,11 +1812,92 @@ function setupDamageFx(){
    damageFlashEl = document.getElementById('damageFlash');
 }
 
+// Healthbar helper: updates fill width, label, and low-health styling
+function updateHealthbar(value){
+   const hb = document.getElementById('healthbar');
+   if (!hb) return;
+   const fill = hb.querySelector('.fill');
+   const label = hb.querySelector('.label');
+   const v = Math.max(0, Math.min(100, Math.round(value)));
+   if (fill) fill.style.width = v + '%';
+   if (label) label.textContent = String(v);
+   hb.classList.toggle('low', v <= 30);
+}
+
+// Overheat HUD helper: shows/hides and updates fill based on weapon heat
+function updateOverheatBar(){
+//    const el = document.getElementById('overheat');
+//    if (!el) return;
+//    const fill = el.querySelector('.fill');
+//    const heatPercent = Math.round(weaponHeat * 100);
+//    if (fill) fill.style.width = heatPercent + '%';
+//    el.classList.toggle('overheated', weaponOverheated);
+//    // Show bar when in flight mode
+//    if (flightMode) {
+//       el.style.display = 'block';
+//       el.setAttribute('aria-hidden', 'false');
+//    } else {
+//       el.style.display = 'none';
+//       el.setAttribute('aria-hidden', 'true');
+//    }
+}
+
+// Overdrive HUD helper: shows/hides and updates fill based on pickup overdrive timer
+function updateOverdriveBar(){
+   const el = document.getElementById('overdrive');
+   if (!el || !engine) return;
+   const fill = el.querySelector('.fill');
+   const timer = Math.max(0, engine.pickupBoostTimer || 0);
+   // Track the peak during the current chain for normalization
+   if (timer > 0) {
+      engine.pickupBoostMax = Math.max(engine.pickupBoostMax || 0, timer);
+   } else {
+      // Reset peak when expired so next activation uses a fresh scale
+      engine.pickupBoostMax = 0;
+   }
+   const maxSpan = Math.max(0.001, engine.pickupBoostMax || 3.0);
+   const pct = Math.max(0, Math.min(100, (timer / maxSpan) * 100));
+   if (fill) fill.style.width = pct + '%';
+   const visible = timer > 0.0;
+   el.style.display = visible ? 'block' : 'none';
+   el.setAttribute('aria-hidden', visible ? 'false' : 'true');
+}
+
 function onPlayerDamaged(amount){
    // Flash intensity and shake scale with damage amount
    damageFlashAlpha = Math.min(1, damageFlashAlpha + (amount * 0.04));
    shakeTime = Math.min(shakeDuration, shakeTime + 0.10 + amount * 0.004);
    shakeMagnitude = Math.min(1.0, 0.4 + amount * 0.03);
+}
+
+// Start message banner shown on entering flight mode
+function showStartMessage(){
+   const id = 'startMessage';
+   let el = document.getElementById(id);
+   if (!el){
+      el = document.createElement('div');
+      el.id = id;
+      el.style.position = 'fixed';
+      el.style.left = '50%';
+      el.style.top = '18%';
+      el.style.transform = 'translate(-50%, -50%)';
+      el.style.zIndex = '50';
+      el.style.pointerEvents = 'none';
+      el.style.padding = '12px 16px';
+      el.style.borderRadius = '10px';
+      el.style.border = '1px solid rgba(51,179,255,0.5)';
+      el.style.background = 'rgba(10,10,14,0.75)';
+      el.style.color = '#cfeeff';
+      el.style.fontFamily = "'VT323', monospace";
+      el.style.fontSize = '24px';
+      el.style.boxShadow = '0 0 22px rgba(51,179,255,0.6), 0 0 46px rgba(26,120,190,0.35)';
+      el.style.opacity = '0';
+      el.style.transition = 'opacity 240ms ease';
+      document.body.appendChild(el);
+   }
+   el.textContent = 'Ghostis forces are invading earth, get away before they shoot at your ship. Eliminate all the enemies in the universe to unlock new data.';
+   requestAnimationFrame(()=>{ el.style.opacity = '1'; });
+   setTimeout(()=>{ el.style.opacity = '0'; setTimeout(()=>{ if (el && el.parentNode) el.parentNode.removeChild(el); }, 400); }, 2600);
 }
 
 window.onYouTubeIframeAPIReady = function(){
@@ -1412,7 +1909,7 @@ function startBackgroundYouTube(){
    // Ensure player exists
    if (!ytPlayer) createYouTubePlayer();
    if (ytPlayer && ytReady) {
-      try { ytPlayer.setVolume(100); ytPlayer.playVideo(); } catch(_){/* ignore */}
+      try { ytPlayer.setVolume(30); ytPlayer.playVideo(); } catch(_){/* ignore */}
       ensureYtLoop();
    } else {
       ytPlayWhenReady = true;
@@ -1439,6 +1936,7 @@ function ensureYtLoop(){
    if (!btn) return;
    const audio = new Audio('./audio/neofuture.mp3');
    audio.preload = 'none';
+   audio.volume = 0.45; // lower background music volume for local audio
    let playing = false;
    btn.addEventListener('click', async () => {
       try {
@@ -1554,6 +2052,13 @@ function ensureYtLoop(){
       g.gain.value = gain;
       src.connect(g).connect(sfxCtx.destination);
       src.start();
+      // Fade out at the end to prevent clipping (last 50ms)
+      const duration = buf.duration;
+      const fadeOutTime = 0.05; // 50ms
+      if (duration > fadeOutTime) {
+         g.gain.setValueAtTime(gain, sfxCtx.currentTime + duration - fadeOutTime);
+         g.gain.linearRampToValueAtTime(0, sfxCtx.currentTime + duration);
+      }
    }
 
    // Quick synthetic low boom for boost engage (no external asset required)
@@ -1580,6 +2085,26 @@ function ensureYtLoop(){
       osc.stop(now + 0.32);
    };
 
+   // Helper function to enable Enter key on modal buttons
+   function enableEnterKey(modal, button) {
+      const handleEnter = (e) => {
+         if (e.key === 'Enter' && modal.style.display !== 'none') {
+            e.preventDefault();
+            button.click();
+         }
+      };
+      window.addEventListener('keydown', handleEnter);
+      // Cleanup when modal is closed
+      const originalDisplay = modal.style.display;
+      const observer = new MutationObserver(() => {
+         if (modal.style.display === 'none' && originalDisplay !== 'none') {
+            window.removeEventListener('keydown', handleEnter);
+            observer.disconnect();
+         }
+      });
+      observer.observe(modal, { attributes: true, attributeFilter: ['style'] });
+   }
+
    // Intro modal logic: open Spotify and play click SFX
    (function(){
       const modal = document.getElementById('readyModal');
@@ -1591,6 +2116,8 @@ function ensureYtLoop(){
          // Start hidden YouTube playback (user gesture compliant)
          startBackgroundYouTube();
       });
+      // Enable Enter key
+      enableEnterKey(modal, btn);
    })();
 
 // ===== Secret Flight Mode implementation =====
@@ -1622,13 +2149,30 @@ function enterFlightMode(){
    if (flightMode) return;
    flightMode = true;
    score = 0;
+   // Reset weapon heat
+   weaponHeat = 0;
+   weaponOverheated = false;
+   overheatCooldownTimer = 0;
+   // Apply a short grace period before enemies are allowed to shoot
+   enemyFireUnlockAt = (typeof gameTime === 'number' ? gameTime : 0) + 3.0; // seconds
+   // On mobile, ensure the on-screen controls are visible
+   if (mobile.active) {
+      const controls = document.querySelector('.mobile-controls');
+      if (controls) { controls.setAttribute('aria-hidden','false'); controls.style.display = ''; }
+   }
    // Update HUD
    const hud = document.querySelector('.hud');
-   if (hud) hud.textContent = `FLIGHT MODE — WASD move • Mouse aim • Click to fire • Shift boost • ESC — Score: 0 | Health: ${playerHealth}`;
+   if (hud) hud.textContent = `FLIGHT MODE — WASD move • Mouse aim • Click fire • Shift boost • F fullscreen — Score: 0 | Health: ${playerHealth}`;
    // Show healthbar
    updateHealthbar(playerHealth);
    const hb = document.getElementById('healthbar');
    if (hb) { hb.style.display = 'block'; hb.setAttribute('aria-hidden','false'); }
+
+   // Start farther from the Earth to avoid instant crossfire
+   if (earth && camera) {
+      const dirOut = camera.position.clone().sub(earth.position).normalize();
+      camera.position.add(dirOut.multiplyScalar(300));
+   }
 
    // Try pointer lock on canvas to capture mouse for aim; allow re-lock on subsequent clicks
    const canvas = renderer.domElement;
@@ -1653,7 +2197,7 @@ function enterFlightMode(){
       }
       playerShip.add(playerModel);
       scene.add(playerShip);
-      // Initialize position a bit in front of the camera
+   // Initialize position a bit in front of the camera
       const fwd0 = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
       playerShip.position.copy(camera.position).add(fwd0.multiplyScalar(10));
       playerShip.quaternion.copy(camera.quaternion);
@@ -1671,26 +2215,8 @@ function enterFlightMode(){
    playerShip.add(glowR);
       engineGlows = [glowL, glowR];
 
-         // Create a trailing particle line for the player's ship (orange)
-      const trailLen = 70;
-      const trailPositions = new Float32Array(trailLen * 3);
-      const trailColors = new Float32Array(trailLen * 3);
-      for (let j = 0; j < trailLen; j++) {
-        const t = 1 - j / (trailLen - 1);
-        const idx = j * 3;
-        trailPositions[idx] = 0; trailPositions[idx+1] = 0; trailPositions[idx+2] = 0;
-            // orange fade
-            trailColors[idx] = 1.0 * t;      // R
-            trailColors[idx+1] = 0.45 * t;   // G
-            trailColors[idx+2] = 0.05 * t;   // B
-      }
-      const pTrailGeom = new THREE.BufferGeometry();
-      pTrailGeom.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
-      pTrailGeom.setAttribute('color', new THREE.BufferAttribute(trailColors, 3));
-         const pTrailMat = new THREE.PointsMaterial({ map: trailTexture, size: 1.6, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, vertexColors: true, color: 0xffffff, sizeAttenuation: true });
-      const pTrailPoints = new THREE.Points(pTrailGeom, pTrailMat);
-      scene.add(pTrailPoints);
-      playerTrail = { len: trailLen, geom: pTrailGeom, positions: trailPositions, colors: trailColors, points: pTrailPoints };
+      // Player trail removed per request
+      playerTrail = null;
    }
 
    // Hide overlay text when entering flight mode
@@ -1706,13 +2232,32 @@ function enterFlightMode(){
 
    // Key listeners
    window.addEventListener('keydown', (e) => {
+      // Fullscreen toggle (F key or F11)
+      if (e.code === 'KeyF' || e.code === 'F11') {
+         e.preventDefault();
+         toggleFullscreen();
+         return;
+      }
       if (e.code === 'KeyW') keys.w = true;
       if (e.code === 'KeyA') keys.a = true;
       if (e.code === 'KeyS') keys.s = true;
       if (e.code === 'KeyD') keys.d = true;
       if (e.code === 'KeyQ') keys.q = true;
       if (e.code === 'KeyE') keys.e = true;
-      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') keys.shift = true;
+      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
+         // Trigger boost SFX strictly on key press (not camera movement)
+         if (!keys.shift) {
+            keys.shift = true;
+            if (!lastBoostSfxTime || (gameTime - lastBoostSfxTime) > 0.25) {
+               playSfx('boost', 0.7);
+               lastBoostSfxTime = gameTime;
+            }
+            boostPulse = 1.0;
+            if (typeof window.playBoom === 'function') window.playBoom(0.9);
+         } else {
+            keys.shift = true;
+         }
+      }
    });
    window.addEventListener('keyup', (e) => {
       if (e.code === 'KeyW') keys.w = false;
@@ -1721,7 +2266,15 @@ function enterFlightMode(){
       if (e.code === 'KeyD') keys.d = false;
       if (e.code === 'KeyQ') keys.q = false;
       if (e.code === 'KeyE') keys.e = false;
-      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') keys.shift = false;
+      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
+         if (keys.shift) {
+            keys.shift = false;
+            if (!lastBoostReleaseSfxTime || (gameTime - lastBoostReleaseSfxTime) > 0.25) {
+               playSfx('boostRev', 0.6);
+               lastBoostReleaseSfxTime = gameTime;
+            }
+         }
+      }
    });
 
    // Mouse look
@@ -1735,42 +2288,186 @@ function enterFlightMode(){
    }
    window.addEventListener('mousemove', onMouseMove);
 
-   // Fire
+   // Fire: continuous while mouse held
    window.addEventListener('mousedown', (e) => {
-      if (e.button === 0) fireBullet();
+      if (e.button === 0) { mouseFiring = true; fireBullet(); }
    });
+   window.addEventListener('mouseup', (e) => { if (e.button === 0) mouseFiring = false; });
+   window.addEventListener('pointerup', () => { mouseFiring = false; });
+   window.addEventListener('blur', () => { mouseFiring = false; });
 
    // Open Spotify search for the song in a new tab (within user gesture cascade)
-      // Moved to intro modal acceptance to avoid multiple tabs
+   // Moved to intro modal acceptance to avoid multiple tabs
    // Initialize engine audio when flight begins
    initEngineAudio();
+   // Show start banner
+   showStartMessage();
 }
 
-function updateHealthbar(value){
-   const hb = document.getElementById('healthbar');
-   if (!hb) return;
-   const fill = hb.querySelector('.fill');
-   const label = hb.querySelector('.label');
-   const pct = Math.max(0, Math.min(100, Math.round(value)));
-   if (fill) fill.style.width = pct + '%';
-   if (label) label.textContent = pct.toString();
-   if (pct <= 30) hb.classList.add('low'); else hb.classList.remove('low');
-}
+function initEngineAudio(){
+   try {
+      if (!sfxCtx) sfxCtx = new (window.AudioContext||window.webkitAudioContext)();
+      if (engine.initialized || !sfxCtx) return;
+      const ctx = sfxCtx;
+      const master = ctx.createGain();
+      master.gain.value = 0.0;
+      master.connect(ctx.destination);
+      const v8Gain = ctx.createGain();
+      v8Gain.gain.value = 1.0;
+      v8Gain.connect(master);
+      // V8 sequencer state
+      const firingOrder = [1,5,4,8,6,3,7,2];
+      const idleRpm = 1200;
+         const maxRpmNoBoost = 3900; // cap without boost so boost clearly raises RPM
+      const maxRpm = 10800;
+      const pitchA = 160; // cylinders 1-4
+      const pitchB = 120; // cylinders 5-8
+      const clickDur = 0.055;
+      engine = {
+         initialized: true,
+         master,
+         v8Gain,
+         firingOrder,
+         seqIndex: 0,
+            maxRpmNoBoost,
+         nextEventTime: ctx.currentTime + 0.03,
+         rpm: idleRpm,
+         idleRpm,
+         maxRpm,
+         period: 15 / idleRpm, // seconds per fire; 4 fires/rev => 60/(rpm*4) == 15/rpm
+         boostLevel: 0,        // smoothed 0..1 boost amount
+         pitchA,
+         pitchB,
+         clickDur,
+         lfoPhase: 0
+      };
+      // Build one persistent voice per cylinder
+      engine.voices = [];
+      for (let i=0;i<8;i++){
+         const osc = ctx.createOscillator();
+         osc.type = 'sine';
+         const g = ctx.createGain();
+         g.gain.value = 0.0;
+         osc.connect(g).connect(v8Gain);
+         // Slight per-cylinder detune for richness
+         const det = (Math.random()*0.06 - 0.03); // ±3%
+         const baseF = (i < 4 ? pitchA : pitchB) * (1 + det);
+         osc.frequency.value = baseF;
+         osc.start();
+         engine.voices.push({ osc, gain: g, detune: det, last: 0 });
+      }
+      // Helper: trigger the cylinder's voice with a short envelope
+      engine.playClick = (time, cylIndex)=>{
+         try {
+            const v = engine.voices[cylIndex|0];
+            if (!v) return;
+            const baseF = (cylIndex < 4 ? engine.pitchA : engine.pitchB) * (1 + (v.detune||0));
+            v.osc.frequency.setValueAtTime(baseF, time);
+            // envelope length based on time between same-cylinder firings
+            const cycle = Math.max(0.01, 120 / Math.max(600, engine.rpm));
+            const dur = Math.min(0.6 * cycle, 0.028);
+            const att = Math.min(0.002, 0.25 * dur);
+            const rpmNorm = Math.max(0, Math.min(1, (engine.rpm - engine.idleRpm) / Math.max(1, (engine.maxRpm - engine.idleRpm))));
+            const midLift = Math.pow(Math.max(0, engineThrottle), 0.6); // stronger mid acceleration feel
+            const dyn = Math.max(rpmNorm, midLift);
+            const amp = 0.11 + 0.23 * dyn; // louder idle baseline
+            const g = v.gain.gain;
+            g.cancelScheduledValues(time);
+            g.setValueAtTime(0.0001, time);
+            g.linearRampToValueAtTime(amp, time + att);
+            g.exponentialRampToValueAtTime(0.0001, time + dur);
+            v.last = time;
+         } catch(_){ }
+      };
+      // Ensure context is resumed on user gesture
+      const unlock = ()=>{ if (ctx && typeof ctx.resume === 'function') ctx.resume(); window.removeEventListener('pointerdown', unlock); };
+      window.addEventListener('pointerdown', unlock, { once: true });
+   } catch(_){}}
 
-function updateFlight(dt){
-   // Apply mobile look deltas (if any) to targets before smoothing
-   if (mobile.active && (mobile.lookDelta.x !== 0 || mobile.lookDelta.y !== 0)) {
-      const touchSens = 0.0032; // radians per pixel
-      yawTarget   -= mobile.lookDelta.x * touchSens;
-      pitchTarget -= mobile.lookDelta.y * touchSens;
-      pitchTarget = Math.max(-maxPitch, Math.min(maxPitch, pitchTarget));
-      mobile.lookDelta.x = 0; mobile.lookDelta.y = 0;
+function updateEngineAudio(dt){
+   if (!engine.initialized) return;
+   const ctx = sfxCtx;
+   // 1) Compute a clean, linear motion scalar 0..1 from controls (no boost baked in)
+   // Desktop: any movement keys pressed => 1, else 0. Mobile: joystick magnitude 0..1. Gamepad: left stick magnitude
+   const hasKeyInput = (keys.w || keys.a || keys.s || keys.d || keys.q || keys.e) ? 1 : 0;
+   const gamepad = window.GamepadController ? window.GamepadController.state : null;
+   const gamepadConnected = gamepad && gamepad.connected;
+   const mobileMag = (mobile && mobile.active && !gamepadConnected) ? Math.min(1, Math.hypot(mobile.move.x, mobile.move.y)) : 0;
+   const gamepadMag = gamepadConnected ? Math.min(1, Math.hypot(gamepad.leftStick.x, gamepad.leftStick.y)) : 0;
+   const motionScalar = Math.max(hasKeyInput, mobileMag, gamepadMag);
+
+   // 2) Rate-limit throttle toward target using linear slew for consistency
+   const upRate = 2.4;   // per second towards 1.0
+   const downRate = 2.0; // per second towards 0.0
+   engineThrottleTarget = motionScalar;
+   const delta = engineThrottleTarget - engineThrottle;
+   const maxStep = (delta > 0 ? upRate : downRate) * dt;
+   if (Math.abs(delta) <= Math.abs(maxStep)) {
+      engineThrottle = engineThrottleTarget;
+   } else {
+      engineThrottle += Math.sign(delta) * Math.abs(maxStep);
    }
-   // Smooth yaw/pitch toward targets for lerpy controls
-   const dampRot = 1 - Math.exp(-dt * 16);
-   yaw   += (yawTarget   - yaw)   * dampRot;
-   pitch += (pitchTarget - pitch) * dampRot;
-   // Build orientation from yaw/pitch
+
+   // 3) Smooth boost level and map throttle to RPM with boost headroom
+   const boostTarget = (keys.shift || (gamepadConnected && gamepad.buttons.boost)) ? 1 : 0;
+   const boostSlew = 4.0; // per second
+   engine.boostLevel += (boostTarget - engine.boostLevel) * Math.min(1, boostSlew * dt);
+   const baseMax = engine.maxRpmNoBoost || (engine.maxRpm - 800);
+   // Capsule pickup overdrive: temporarily raise ceiling to 15000
+   engine.pickupBoostTimer = Math.max(0, (engine.pickupBoostTimer||0) - dt);
+   const overdriveMax = (engine.pickupBoostTimer > 0) ? 15000 : engine.maxRpm;
+   // If pickup overdrive is active, allow ceiling to reach full overdriveMax independent of Shift boost
+   const targetMax = (engine.pickupBoostTimer > 0)
+      ? overdriveMax
+      : Math.min(overdriveMax, baseMax + engine.boostLevel * Math.max(0, engine.maxRpm - baseMax));
+   const targetRpm = engine.idleRpm + engineThrottle * (targetMax - engine.idleRpm);
+   // 4) Slow, linear slew for RPM changes (slower increase as requested)
+   const rpmSlewUp = (engine.pickupBoostTimer > 0) ? 7000 : 1500;   // faster surge during overdrive
+   const rpmSlewDown = 2000; // RPM per second when decelerating
+   const rpmDelta = targetRpm - engine.rpm;
+   const rpmStep = (rpmDelta > 0 ? rpmSlewUp : rpmSlewDown) * dt;
+   if (Math.abs(rpmDelta) <= Math.abs(rpmStep)) {
+      engine.rpm = targetRpm;
+   } else {
+      engine.rpm += Math.sign(rpmDelta) * Math.abs(rpmStep);
+   }
+   // Clamp RPM to dynamic ceiling (overdrive raises this to 15000)
+   engine.rpm = Math.max(400, Math.min(overdriveMax, engine.rpm));
+
+   // 4) Master gain follows throttle linearly (light smoothing)
+   const masterG = 0.18 + engineThrottle * 0.40 + (engine.pickupBoostTimer>0 ? 0.08 : 0.0); // slight gain lift during pickup
+   engine.master.gain.setTargetAtTime(masterG, ctx.currentTime, 0.035);
+
+   // 5) Smooth the period and schedule upcoming cylinder clicks with short lookahead
+   const lookahead = 0.06; // seconds
+   const measuredPeriod = 15 / Math.max(600, engine.rpm);
+   // Smooth period toward measured to avoid small jitter at boundaries
+   const periodSmooth = 1 - Math.exp(-dt * 10);
+   engine.period += (measuredPeriod - engine.period) * periodSmooth;
+   while (engine.nextEventTime < ctx.currentTime + lookahead) {
+      const cyl = engine.firingOrder[engine.seqIndex];
+      if (typeof engine.playClick === 'function') engine.playClick(engine.nextEventTime, (cyl - 1));
+      engine.seqIndex = (engine.seqIndex + 1) % engine.firingOrder.length;
+      engine.nextEventTime += engine.period;
+   }
+}
+
+// Per-frame flight update
+function updateFlight(dt){
+   // Gamepad look input (right stick)
+   const gamepadInstance = window.GamepadController ? window.GamepadController.state : null;
+   if (gamepadInstance && gamepadInstance.connected) {
+      const lookSpeed = gamepadInstance.sensitivity * 0.8; // radians per second at full deflection (reduced from 2.0)
+      yawTarget -= gamepadInstance.rightStick.x * lookSpeed * dt;
+      pitchTarget -= gamepadInstance.rightStick.y * lookSpeed * dt;
+      pitchTarget = Math.max(-maxPitch, Math.min(maxPitch, pitchTarget));
+   }
+
+   // Smooth interpolation from current yaw/pitch to targets
+   const smoothing = 12.0;
+   yaw += (yawTarget - yaw) * Math.min(1, smoothing * dt);
+   pitch += (pitchTarget - pitch) * Math.min(1, smoothing * dt);
+   // Orientation from yaw/pitch targets
    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ'));
    camera.quaternion.copy(q);
    // Movement vectors
@@ -1780,7 +2477,12 @@ function updateFlight(dt){
    // Gradual acceleration: accelerate velocity toward desired input direction
    const baseSpeed = 60;
    const boostSpeed = 220;
-   const targetSpeed = keys.shift ? boostSpeed : baseSpeed; // units/sec
+   const pickupSpeed = (engine.pickupBoostTimer && engine.pickupBoostTimer>0) ? 1.6 : 1.0; // temporary speed multiplier
+
+   // Check for boost input (keyboard shift or gamepad L2/LT)
+   const boostActive = keys.shift || (gamepadInstance && gamepadInstance.connected && gamepadInstance.buttons.boost);
+   const targetSpeed = (boostActive ? boostSpeed : baseSpeed) * pickupSpeed; // units/sec
+
    let wish = new THREE.Vector3();
    // Desktop keys
    if (keys.w) wish.add(fwd);
@@ -1790,19 +2492,36 @@ function updateFlight(dt){
    // Q/E vertical translation (up/down)
    if (keys.q) wish.sub(up);
    if (keys.e) wish.add(up);
-   // Mobile joystick (overrides horizontal plan motion)
-   if (mobile.active) {
+
+   // Gamepad left stick movement (overrides keyboard if active)
+   if (gamepadInstance && gamepadInstance.connected) {
+      const gMag = Math.hypot(gamepadInstance.leftStick.x, gamepadInstance.leftStick.y);
+      if (gMag > 0.01) {
+         const gRight = right.clone().multiplyScalar(gamepadInstance.leftStick.x);
+         const gFwd = fwd.clone().multiplyScalar(-gamepadInstance.leftStick.y); // Invert Y for natural feel
+         const gWish = gRight.add(gFwd);
+         wish = gWish.normalize().multiplyScalar(targetSpeed * Math.min(1, gMag));
+      }
+   }
+
+   // Mobile joystick (overrides horizontal plan motion, but not if gamepad is connected)
+   const gamepadConnected = gamepadInstance && gamepadInstance.connected;
+   if (mobile.active && !gamepadConnected) {
       const mag = Math.hypot(mobile.move.x, mobile.move.y);
       if (mag > 0.01) {
          const mRight = right.clone().multiplyScalar(mobile.move.x);
          const mFwd   = fwd.clone().multiplyScalar(mobile.move.y);
-         wish.copy(mRight.add(mFwd));
-         // Scale speed by joystick magnitude 0..1
-         wish.normalize().multiplyScalar(targetSpeed * Math.min(1, mag));
+         wish = mRight.add(mFwd).normalize().multiplyScalar(targetSpeed * Math.min(1, mag));
       }
    }
-   if (wish.lengthSq() > 0 && !mobile.active) wish.normalize().multiplyScalar(targetSpeed);
-   const acc = keys.shift ? 420 : 120; // stronger acceleration when boosting
+
+   // Normalize keyboard input only if gamepad/mobile not active
+   const gamepadActive = gamepadInstance && gamepadInstance.connected && Math.hypot(gamepadInstance.leftStick.x, gamepadInstance.leftStick.y) > 0.01;
+   const mobileActive = mobile.active && !gamepadConnected;
+   if (wish.lengthSq() > 0 && !mobileActive && !gamepadActive) {
+      wish.normalize().multiplyScalar(targetSpeed);
+   }
+   const acc = boostActive ? 420 : 120; // stronger acceleration when boosting
    const toTarget = wish.clone().sub(playerVel);
    const maxDelta = acc * dt;
    if (toTarget.length() > maxDelta) {
@@ -1841,33 +2560,15 @@ function updateFlight(dt){
    const forwardRatio = THREE.MathUtils.clamp(Math.abs(forwardSpeed) / Math.max(1, targetSpeed), 0, 1);
    const hasKeyInput = keys.w || keys.s || keys.a || keys.d || keys.q || keys.e;
    const mobileMag = Math.hypot(mobile.move.x, mobile.move.y);
-   const hasMobileInput = mobile.active && mobileMag > 0.05;
-   engineThrottleTarget = (hasKeyInput || hasMobileInput) ? forwardRatio : 0.0;
+   const hasMobileInput = mobile.active && !gamepadConnected && mobileMag > 0.05;
+   const gamepadInput = (gamepadInstance && gamepadInstance.connected) ? Math.hypot(gamepadInstance.leftStick.x, gamepadInstance.leftStick.y) : 0;
+   const hasGamepadInput = gamepadInput > 0.05;
+   engineThrottleTarget = (hasKeyInput || hasMobileInput || hasGamepadInput) ? forwardRatio : 0.0;
    updateEngineAudio(dt);
 
    // Compute boost FX target (0..1) only when clearly boosting forward
-   const wasBoost = wasBoosting;
-   const isBoosting = keys.shift && forwardRatio > 0.5;
-   // Play a short whoosh when boost engages (edge-triggered)
-   if (isBoosting && !wasBoost) {
-      // Debounce in case of rapid toggling
-      if (!lastBoostSfxTime || (gameTime - lastBoostSfxTime) > 0.25) {
-         playSfx('boost', 0.7);
-         lastBoostSfxTime = gameTime;
-      }
-   // Shock pulse for distortion on engage
-   boostPulse = 1.0;
-   // Optional low "boom" synth for impact
-   if (typeof window.playBoom === 'function') window.playBoom(0.9);
-   }
-   // Play reversed whoosh on boost release (falling edge)
-   if (!isBoosting && wasBoost) {
-      if (!lastBoostReleaseSfxTime || (gameTime - lastBoostReleaseSfxTime) > 0.25) {
-         playSfx('boostRev', 0.6);
-         lastBoostReleaseSfxTime = gameTime;
-      }
-   }
-   const boostTarget = isBoosting ? THREE.MathUtils.clamp((forwardRatio - 0.5) / 0.5, 0, 1) : 0;
+   const isBoosting = boostActive && forwardRatio > 0.5;
+   const boostTarget = boostActive ? THREE.MathUtils.clamp((forwardRatio - 0.5) / 0.5, 0, 1) : 0;
    const boostSmooth = 1 - Math.exp(-dt * 6);
    boostFx += (boostTarget - boostFx) * boostSmooth;
    // Keep Afterimage disabled entirely (we'll use vignette + FOV instead)
@@ -1885,42 +2586,52 @@ function updateFlight(dt){
    const baseFov = 60, maxKick = 6; // degrees
    const newFov = baseFov + boostFx * maxKick;
    if (Math.abs(camera.fov - newFov) > 0.01) { camera.fov = newFov; camera.updateProjectionMatrix(); }
-   // Update boost state memory
+   // Update boost state memory (kept for internal logic; SFX handled on key events)
    wasBoosting = isBoosting;
-
-   // Boost-only motion blur: enable subtle Afterimage only when boosting
 
    // Keep player's ship attached to camera orientation/position
    if (playerShip) {
-   // Smooth target-based sway and bank (prefer mobile stick if active)
-   const lr = mobile.active ? mobile.move.x : ( (keys.d ? 1 : 0) - (keys.a ? 1 : 0) );
-   const fb = mobile.active ? mobile.move.y : ( (keys.w ? 1 : 0) - (keys.s ? 1 : 0) );
-   const ud = (keys.e ? 1 : 0) - (keys.q ? 1 : 0);
+      // Smooth target-based sway and bank (gamepad > mobile > keyboard priority)
+      const mobileInputActive = mobile.active && !gamepadConnected;
+      let lr, fb;
+      if (gamepadConnected && gamepadInstance) {
+         // Use gamepad left stick
+         lr = gamepadInstance.leftStick.x;
+         fb = -gamepadInstance.leftStick.y; // Inverted Y
+      } else if (mobileInputActive) {
+         // Use mobile touch controls
+         lr = mobile.move.x;
+         fb = mobile.move.y;
+      } else {
+         // Use keyboard
+         lr = (keys.d ? 1 : 0) - (keys.a ? 1 : 0);
+         fb = (keys.w ? 1 : 0) - (keys.s ? 1 : 0);
+      }
+      const ud = (keys.e ? 1 : 0) - (keys.q ? 1 : 0);
       shipSwayTarget = lr * 1.2; // meters
       shipBankTarget = lr * THREE.MathUtils.degToRad(18); // roll degrees
-   shipPitchLeanTarget = (fb + 0.6 * ud) * THREE.MathUtils.degToRad(6); // slight nose tilt plus up/down
+      shipPitchLeanTarget = (fb + 0.6 * ud) * THREE.MathUtils.degToRad(6); // slight nose tilt plus up/down
       const damp = 1 - Math.exp(-dt * 10); // smoothing factor ~ critically damped
       shipSway += (shipSwayTarget - shipSway) * damp;
       shipBank += (shipBankTarget - shipBank) * damp;
       shipPitchLean += (shipPitchLeanTarget - shipPitchLean) * damp;
 
-   // Compose ship orientation: camera orientation + roll (around forward) + slight pitch lean (around right)
-   const qRoll = new THREE.Quaternion().setFromAxisAngle(fwd, shipBank);
-   const qPitchLean = new THREE.Quaternion().setFromAxisAngle(right, -shipPitchLean);
-   const shipQuat = q.clone().multiply(qRoll).multiply(qPitchLean);
-   playerShip.quaternion.copy(shipQuat).multiply(PLAYER_YAW_LEFT);
+      // Compose ship orientation: camera orientation + roll (around forward) + slight pitch lean (around right)
+      const qRoll = new THREE.Quaternion().setFromAxisAngle(fwd, shipBank);
+      const qPitchLean = new THREE.Quaternion().setFromAxisAngle(right, -shipPitchLean);
+      const shipQuat = q.clone().multiply(qRoll).multiply(qPitchLean);
+      playerShip.quaternion.copy(shipQuat).multiply(PLAYER_YAW_LEFT);
 
-         const shipOffset = 10.0; // meters in front of camera
-         const downOffset = 1.2;  // place ship slightly below camera center
-         playerShip.position.copy(camera.position)
-            .add(fwd.clone().multiplyScalar(shipOffset))
-            .add(right.clone().multiplyScalar(shipSway))
-            .add(up.clone().multiplyScalar(-downOffset));
+      const shipOffset = 10.0; // meters in front of camera
+      const downOffset = 1.2;  // place ship slightly below camera center
+      playerShip.position.copy(camera.position)
+         .add(fwd.clone().multiplyScalar(shipOffset))
+         .add(right.clone().multiplyScalar(shipSway))
+         .add(up.clone().multiplyScalar(-downOffset));
 
       // Update engine glows placement, flicker and scale based on thrust and boost
       const thrust = (keys.w ? 1.0 : 0.35) + (keys.shift ? 0.4 : 0);
       const boostScale = 1.0 + (boostFx || 0) * 1.0; // up to +100% size at full boost
-      // Engine glows have fixed local offsets on the ship; no per-frame repositioning needed
       for (const s of engineGlows) {
          const flicker = 0.8 + Math.random() * 0.5; // keep some life
          const k = (1.0 + thrust * 0.6) * boostScale;
@@ -1934,74 +2645,11 @@ function updateFlight(dt){
       }
    }
 
-   // Update player's trail
-   if (playerTrail && playerShip) {
-      const tp = playerTrail.positions;
-      const len = playerTrail.len;
-      for (let i = len - 1; i > 0; i--) {
-        tp[i*3] = tp[(i-1)*3];
-        tp[i*3+1] = tp[(i-1)*3+1];
-        tp[i*3+2] = tp[(i-1)*3+2];
-      }
-   // head position a bit behind the ship to visualize exhaust
-   const back = new THREE.Vector3(0,0,1).applyQuaternion(playerShip.quaternion);
-   const head = playerShip.position.clone().add(back.multiplyScalar(3.0));
-      tp[0] = head.x; tp[1] = head.y; tp[2] = head.z;
-      playerTrail.geom.attributes.position.needsUpdate = true;
-   }
-   // Auto-fire while holding mobile fire button
-   if (mobile.active && mobile.firing) {
-      fireBullet();
-   }
-}
-
-function initEngineAudio(){
-   try {
-      if (!sfxCtx) sfxCtx = new (window.AudioContext||window.webkitAudioContext)();
-      if (engine.initialized || !sfxCtx) return;
-      const ctx = sfxCtx;
-      const master = ctx.createGain();
-      master.gain.value = 0.0;
-      master.connect(ctx.destination);
-      // Base hum
-      const baseOsc = ctx.createOscillator();
-      baseOsc.type = 'sawtooth';
-      baseOsc.frequency.value = 80;
-      const baseGain = ctx.createGain();
-      baseGain.gain.value = 0.02;
-      baseOsc.connect(baseGain).connect(master);
-      baseOsc.start();
-      // Overtone / whine
-      const overtoneOsc = ctx.createOscillator();
-      overtoneOsc.type = 'triangle';
-      overtoneOsc.frequency.value = 240;
-      const overtoneGain = ctx.createGain();
-      overtoneGain.gain.value = 0.0;
-      overtoneOsc.connect(overtoneGain).connect(master);
-      overtoneOsc.start();
-      engine = { initialized:true, master, baseOsc, baseGain, overtoneOsc, overtoneGain };
-      // Ensure context is resumed on user gesture
-   const unlock = ()=>{ if (ctx && typeof ctx.resume === 'function') ctx.resume(); window.removeEventListener('pointerdown', unlock); };
-      window.addEventListener('pointerdown', unlock, { once: true });
-   } catch(_){}
-}
-
-function updateEngineAudio(dt){
-   if (!engine.initialized) return;
-   const smooth = 1 - Math.exp(-dt * 8);
-   engineThrottle += (engineThrottleTarget - engineThrottle) * smooth;
-   // Frequencies ramp with throttle
-   const baseF = 80 + engineThrottle * 120;     // 80..200 Hz
-   const overF = 240 + engineThrottle * 360;    // 240..600 Hz
-   // Gains ramp; keep an audible idle
-   const baseG = 0.02 + engineThrottle * 0.10;  // 0.02..0.12
-   const overG = 0.00 + engineThrottle * 0.08;  // 0..0.08
-   const masterG = 0.10 + engineThrottle * 0.12;// 0.10..0.22
-   engine.baseOsc.frequency.setTargetAtTime(baseF, sfxCtx.currentTime, 0.03);
-   engine.overtoneOsc.frequency.setTargetAtTime(overF, sfxCtx.currentTime, 0.03);
-   engine.baseGain.gain.setTargetAtTime(baseG, sfxCtx.currentTime, 0.05);
-   engine.overtoneGain.gain.setTargetAtTime(overG, sfxCtx.currentTime, 0.05);
-   engine.master.gain.setTargetAtTime(masterG, sfxCtx.currentTime, 0.05);
+   // Auto-fire while holding mobile, mouse, or gamepad fire
+   const mobileFireActive = mobile.active && !gamepadConnected;
+   if (mobileFireActive && mobile.firing) fireBullet();
+   if (!mobileFireActive && mouseFiring) fireBullet();
+   if (gamepadInstance && gamepadInstance.connected && gamepadInstance.buttons.fire) fireBullet();
 }
 
 function enemyShootFrom(ship){
@@ -2017,6 +2665,8 @@ function enemyShootFrom(ship){
 }
 
 function updateEnemiesFire(dt){
+   // Hold off all enemy fire during the grace period
+   if (typeof gameTime === 'number' && gameTime < enemyFireUnlockAt) return;
    for (const s of ships) {
       if (!s.ai || s.active === false) continue;
       s.ai.timer -= dt;
@@ -2046,7 +2696,7 @@ function updateEnemyBullets(dt){
          onPlayerDamaged(15);
          updateHealthbar(playerHealth);
          const hud = document.querySelector('.hud');
-         if (hud) hud.textContent = `FLIGHT MODE — WASD move • Mouse aim • Click to fire • Shift boost • ESC — Score: ${score} | Health: ${playerHealth}`;
+         if (hud) hud.textContent = `FLIGHT MODE — WASD move • Mouse aim • Click fire • Shift boost • F fullscreen — Score: ${score} | Health: ${playerHealth}`;
          // small explosion for hit
          spawnExplosion(b.mesh.position.clone());
          scene.remove(b.mesh);
@@ -2075,7 +2725,13 @@ function checkVictory(){
       if (modal) {
          modal.style.display = '';
          const btn = document.getElementById('winOkBtn');
-         btn && btn.addEventListener('click', ()=>{ modal.style.display = 'none'; });
+         if (btn) {
+            btn.addEventListener('click', ()=>{ modal.style.display = 'none'; });
+            // Enable Enter key
+            if (typeof enableEnterKey === 'function') {
+               enableEnterKey(modal, btn);
+            }
+         }
       }
    }
 }
@@ -2083,19 +2739,77 @@ function checkVictory(){
 function fireBullet(){
    if (!flightMode) return;
    if (fireCooldown > 0) return;
+   if (weaponOverheated) return; // Can't fire when overheated
+
    fireCooldown = 0.09; // ~11 rps
+
+   // Increase heat when firing (reaches 1.0 after 5 seconds of continuous fire)
+   // Fire rate is 1/0.09 = 11.11 shots/sec, so in 5 sec = 55.5 shots
+   weaponHeat = Math.min(1.0, weaponHeat + (1.0 / 55.5));
+
+   // Check if we just hit overheat threshold
+   if (weaponHeat >= 1.0 && !weaponOverheated) {
+      weaponOverheated = true;
+      overheatCooldownTimer = 5.0;
+      playSfx('explosion', 0.5); // Warning sound
+   }
+
    playSfx('laser', 0.7);
    const dir = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion).normalize();
    const muzzleOffset = 3.0;
    const start = (playerShip ? playerShip.position.clone() : camera.position.clone()).add(dir.clone().multiplyScalar(muzzleOffset));
-   const mesh = new THREE.Mesh(bulletGeom, bulletMat.clone());
+
+   // Create bullet with color based on heat (blue -> yellow -> orange -> red)
+   let bulletColor = 0x33b3ff; // default blue
+   if (weaponHeat < 0.33) {
+      // Cool: blue to cyan
+      bulletColor = 0x33b3ff;
+   } else if (weaponHeat < 0.66) {
+      // Warm: cyan to yellow
+      const t = (weaponHeat - 0.33) / 0.33;
+      const r = Math.floor((0.2 + t * 0.8) * 255);
+      const g = Math.floor((0.7 + t * 0.3) * 255);
+      const b = Math.floor((1.0 - t * 0.6) * 255);
+      bulletColor = (r << 16) | (g << 8) | b;
+   } else {
+      // Hot: yellow to red
+      const t = (weaponHeat - 0.66) / 0.34;
+      const r = 255;
+      const g = Math.floor((1.0 - t * 0.6) * 255);
+      const b = Math.floor((0.4 - t * 0.4) * 255);
+      bulletColor = (r << 16) | (g << 8) | b;
+   }
+
+   const mat = new THREE.MeshBasicMaterial({
+      color: bulletColor,
+      transparent: true,
+      opacity: 0.95,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+   });
+
+   const mesh = new THREE.Mesh(bulletGeom, mat);
    mesh.position.copy(start);
    scene.add(mesh);
-   bullets.push({ mesh, vel: dir.multiplyScalar(240), life: 2.2, maxLife: 2.2 });
+   bullets.push({ mesh, vel: dir.multiplyScalar(420), life: 2.2, maxLife: 2.2 });
+   spawnFlash(start, 1.5, weaponHeat > 0.66 ? 0xffaa44 : 0xffff88);
 }
 
 function updateBullets(dt){
    fireCooldown = Math.max(0, fireCooldown - dt);
+
+   // Handle weapon heat cooling and overheat recovery
+   if (weaponOverheated) {
+      overheatCooldownTimer -= dt;
+      if (overheatCooldownTimer <= 0) {
+         weaponOverheated = false;
+         weaponHeat = 0;
+      }
+   } else {
+      // Passive cooling when not firing (cools down in ~3 seconds)
+      weaponHeat = Math.max(0, weaponHeat - dt * 0.33);
+   }
+
    for (let i = bullets.length - 1; i >= 0; i--) {
       const b = bullets[i];
       b.mesh.position.addScaledVector(b.vel, dt);
@@ -2125,17 +2839,50 @@ function updateBullets(dt){
                }
             });
             const defeatedPlanet = s.planetId;
+            const explosionPos = s.mesh.position.clone();
             ships.splice(j, 1);
-            spawnExplosion(s.mesh.position.clone());
+            spawnExplosion(explosionPos);
+            spawnFlash(explosionPos, 6, 0xff6622);
+            playSfx('explosion', 1.0);
             score += 1;
             const hud = document.querySelector('.hud');
-            if (hud) hud.textContent = `FLIGHT MODE — WASD move • Mouse aim • Click to fire • Shift boost • ESC to release — Score: ${score}`;
+            if (hud) hud.textContent = `FLIGHT MODE — WASD move • Mouse aim • Click fire • Shift boost • F fullscreen `;
+            // Check if all saucers are now defeated
+            const remainingShips = ships.filter(ship => ship.active !== false).length;
+            if (remainingShips === 0) {
+               showCuriosaModal('Victory! All saucers eliminated. We\'re working on a full-featured game with Apoc as the protagonist - coming in 2026!');
+            }
             // If this ship belonged to a planet and all of that planet's enemies are gone, show curiosa
             if (defeatedPlanet) maybeShowCuriosa(defeatedPlanet);
             // Remove bullet on hit
             scene.remove(b.mesh);
             bullets.splice(i, 1);
             break;
+         }
+      }
+      // If bullet still exists, check collision with asteroids
+      if (i < bullets.length) {
+         for (let k = asteroids.length - 1; k >= 0; k--) {
+            const a = asteroids[k];
+            const ad = b.mesh.position.distanceTo(a.mesh.position);
+            const aHitR = a.radius + 0.9; // allow some leeway
+            if (ad < aHitR) {
+               const explodePos = a.mesh.position.clone();
+               spawnExplosion(explodePos);
+               spawnFlash(explodePos, 7, 0xffaa66);
+               playSfx('explosion', 0.8);
+               // Fragment if large
+               if (typeof breakAsteroid === 'function') breakAsteroid(a);
+               // Remove asteroid
+               scene.remove(a.mesh);
+               try { a.mesh.geometry?.dispose?.(); } catch(_){}
+               try { a.mesh.material?.dispose?.(); } catch(_){}
+               asteroids.splice(k, 1);
+               // Remove bullet
+               scene.remove(b.mesh);
+               bullets.splice(i, 1);
+               break;
+            }
          }
       }
       if (b.life <= 0) {
@@ -2156,6 +2903,39 @@ function spawnExplosion(pos){
 function updateExplosions(dt){
    if (window.ExplosionSystem && typeof window.ExplosionSystem.update === 'function') {
       window.ExplosionSystem.update(dt);
+   }
+}
+
+function spawnFlash(pos, size = 8, color = 0xffaa44){
+   if (!trailTexture) return;
+   const mat = new THREE.SpriteMaterial({
+      map: trailTexture,
+      color: color,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      depthTest: false
+   });
+   const sprite = new THREE.Sprite(mat);
+   sprite.position.copy(pos);
+   sprite.scale.set(size, size, 1);
+   sprite.renderOrder = 1000; // draw late so it isn't hidden
+   scene.add(sprite);
+   flashes.push({ sprite, life: 0.15, maxLife: 0.15, startSize: size });
+}
+
+function updateFlashes(dt){
+   for (let i = flashes.length - 1; i >= 0; i--){
+      const f = flashes[i];
+      f.life -= dt;
+      const t = Math.max(0, f.life / f.maxLife);
+      f.sprite.material.opacity = t;
+      f.sprite.scale.set(f.startSize * (1 + (1 - t) * 0.5), f.startSize * (1 + (1 - t) * 0.5), 1);
+      if (f.life <= 0){
+         scene.remove(f.sprite);
+         f.sprite.material.dispose();
+         flashes.splice(i, 1);
+      }
    }
 }
 </script>
